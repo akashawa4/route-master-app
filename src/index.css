@@ -1,0 +1,169 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Driver App Design System - Operational & Professional */
+
+@layer base {
+  :root {
+    /* Core Background */
+    --background: 0 0% 98%;
+    --foreground: 220 13% 18%;
+
+    /* Card surfaces */
+    --card: 0 0% 100%;
+    --card-foreground: 220 13% 18%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 13% 18%;
+
+    /* Primary Action - Blue #2563EB */
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary - Light grey surface */
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 220 13% 18%;
+
+    /* Muted elements */
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    /* Accent - Current/Active Blue #0284C7 */
+    --accent: 200 98% 39%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Success - Reached Green #16A34A */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+
+    /* Pending - Grey #9CA3AF */
+    --pending: 218 11% 65%;
+    --pending-foreground: 220 13% 18%;
+
+    /* Destructive/Error - Red #DC2626 */
+    --destructive: 0 84% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Warning */
+    --warning: 25 95% 53%;
+    --warning-foreground: 0 0% 100%;
+
+    /* Borders and inputs */
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.5rem;
+
+    /* Sidebar (not used but keeping for compatibility) */
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 220 13% 18%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 14% 96%;
+    --sidebar-accent-foreground: 220 13% 18%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217 91% 60%;
+  }
+
+  .dark {
+    --background: 220 13% 10%;
+    --foreground: 0 0% 98%;
+
+    --card: 220 13% 12%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 220 13% 12%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 13% 18%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 220 13% 18%;
+    --muted-foreground: 220 9% 65%;
+
+    --accent: 200 98% 39%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+
+    --pending: 218 11% 50%;
+    --pending-foreground: 0 0% 98%;
+
+    --destructive: 0 84% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --warning: 25 95% 53%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 220 13% 20%;
+    --input: 220 13% 20%;
+    --ring: 217 91% 60%;
+
+    --sidebar-background: 220 13% 10%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 13% 18%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 220 13% 20%;
+    --sidebar-ring: 217 91% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  /* Typography hierarchy */
+  h1 {
+    @apply text-2xl font-bold tracking-tight;
+  }
+
+  h2 {
+    @apply text-xl font-semibold;
+  }
+
+  h3 {
+    @apply text-lg font-medium;
+  }
+}
+
+@layer components {
+  /* Status chips */
+  .status-reached {
+    @apply bg-success text-success-foreground;
+  }
+
+  .status-current {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .status-pending {
+    @apply bg-pending/20 text-pending;
+  }
+
+  /* Inline messages */
+  .message-error {
+    @apply text-destructive;
+  }
+
+  .message-warning {
+    @apply text-warning;
+  }
+
+  .message-info {
+    @apply text-muted-foreground;
+  }
+}
