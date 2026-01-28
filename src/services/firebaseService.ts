@@ -1,6 +1,7 @@
-import { ref, set, onDisconnect, serverTimestamp } from "firebase/database";
+import { ref, set, update, serverTimestamp } from "firebase/database";
 import { database } from "@/lib/firebase";
 import { LocationData } from "./locationService";
+import type { StopStatus } from "@/types/driver";
 
 export interface BusLocationData extends LocationData {
   driverId: string;
@@ -9,6 +10,14 @@ export interface BusLocationData extends LocationData {
   routeId: string;
   routeName: string;
   routeState: 'not_started' | 'in_progress' | 'completed';
+}
+
+export interface StopProgress {
+  id: string;
+  name: string;
+  order: number;
+  status: StopStatus;
+  reachedAt?: number;
 }
 
 /**
@@ -35,6 +44,19 @@ const removeUndefined = (obj: any): any => {
   }
   
   return obj;
+};
+
+/**
+ * Realtime Database keys cannot contain: . # $ [ ] /
+ * This makes a "safe" key from a stop name for easy lookups.
+ */
+const toSafeKey = (value: string): string => {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[.#$\[\]\/]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 120);
 };
 
 /**
@@ -85,29 +107,66 @@ export const saveLocationToFirebase = async (
       updatedAt: serverTimestamp()
     });
 
-    // Also save to driver-specific path for tracking
-    const driverLocationRef = ref(database, `drivers/${driverId}/location`);
-    await set(driverLocationRef, {
-      ...cleanedLocationData,
-      updatedAt: serverTimestamp()
-    });
-
-    // Set up disconnect handler to mark driver as offline when they disconnect
-    const driverStatusRef = ref(database, `drivers/${driverId}/status`);
-    await onDisconnect(driverStatusRef).set({
-      online: false,
-      lastSeen: serverTimestamp()
-    });
-
-    // Mark driver as online
-    await set(driverStatusRef, {
-      online: true,
-      lastSeen: serverTimestamp()
-    });
-
-    console.log('Location saved to Firebase successfully');
+    console.log('Location saved to Firebase successfully for bus:', busNumber);
   } catch (error) {
     console.error('Error saving location to Firebase:', error);
+    throw error;
+  }
+};
+
+/**
+ * Save stop progress to Firebase Realtime Database (single bus tree).
+ *
+ * Writes:
+ * - /buses/{busNumber}/stops/{stopId} -> { name, order, status, reachedAt? }
+ * - /buses/{busNumber}/stopsByName/{safeStopName} -> { stopId, name, order, status, reachedAt? }
+ * - /buses/{busNumber}/currentStop -> { stopId, name, order, status, updatedAt }
+ */
+export const saveStopsProgressToFirebase = async (
+  busNumber: string,
+  stops: StopProgress[],
+): Promise<void> => {
+  try {
+    const busRoot = `buses/${busNumber}`;
+    const updates: Record<string, any> = {};
+
+    const current =
+      stops.find((s) => s.status === "current") ??
+      stops.find((s) => s.status === "pending") ??
+      null;
+
+    for (const s of stops) {
+      const reachedAt = s.status === "reached" ? Date.now() : undefined;
+
+      updates[`${busRoot}/stops/${s.id}`] = removeUndefined({
+        id: s.id,
+        name: s.name,
+        order: s.order,
+        status: s.status,
+        reachedAt,
+      });
+
+      updates[`${busRoot}/stopsByName/${toSafeKey(s.name)}`] = removeUndefined({
+        stopId: s.id,
+        name: s.name,
+        order: s.order,
+        status: s.status,
+        reachedAt,
+      });
+    }
+
+    updates[`${busRoot}/currentStop`] = removeUndefined({
+      stopId: current?.id ?? null,
+      name: current?.name ?? null,
+      order: current?.order ?? null,
+      status: current?.status ?? null,
+      updatedAt: serverTimestamp(),
+    });
+
+    await update(ref(database), updates);
+    console.log("Stops progress saved to Firebase for bus:", busNumber);
+  } catch (error) {
+    console.error("Error saving stops progress to Firebase:", error);
     throw error;
   }
 };
@@ -123,12 +182,6 @@ export const updateRouteState = async (
   try {
     const routeStateRef = ref(database, `buses/${busNumber}/routeState`);
     await set(routeStateRef, {
-      state: routeState,
-      updatedAt: serverTimestamp()
-    });
-
-    const driverRouteStateRef = ref(database, `drivers/${driverId}/routeState`);
-    await set(driverRouteStateRef, {
       state: routeState,
       updatedAt: serverTimestamp()
     });
