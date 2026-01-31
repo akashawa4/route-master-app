@@ -14,7 +14,7 @@ const firebaseConfig = {
   storageBucket: "college-bus-tracking-903e7.firebasestorage.app",
   messagingSenderId: "898454276553",
   appId: "1:898454276553:web:bfcb5f6d305696cc4d4018",
-  measurementId: "G-GMN49YD0EM"
+  measurementId: "G-GMN49YD0EM",
 };
 
 // Initialize Firebase
@@ -34,5 +34,9 @@ const firestore = getFirestore(app);
 
 // Initialize Auth
 const auth = getAuth(app);
+
+/** Web Push (VAPID) public key – use in Firebase Messaging getToken({ vapidKey }) for web push */
+export const FCM_VAPID_KEY =
+  "BGinVDFTAtjjdew-FgbaItj_umBrX7jVLhurnQjBQojPE_mRb5jCGlqh8zlmKNs4vUTnke9bVvvM-RzfvWDXIlA";
 
 export { app, analytics, database, firestore, auth };

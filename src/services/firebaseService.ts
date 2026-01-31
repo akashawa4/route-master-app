@@ -60,6 +60,33 @@ const toSafeKey = (value: string): string => {
 };
 
 /**
+ * Write bus location meta (routeId, routeName, driverName, routeState) so Cloud Functions
+ * can read routeId before/when routeState triggers. Call this when route starts so routeId
+ * exists before routeState is written.
+ */
+export const writeBusLocationMeta = async (
+  busNumber: string,
+  routeId: string,
+  routeName: string,
+  driverName: string,
+  routeState: 'not_started' | 'in_progress' | 'completed'
+): Promise<void> => {
+  try {
+    const locationRef = ref(database, `buses/${busNumber}/location`);
+    await set(locationRef, {
+      routeId,
+      routeName,
+      driverName,
+      routeState,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    console.error('Error writing bus location meta:', error);
+    throw error;
+  }
+};
+
+/**
  * Save location to Firebase Realtime Database
  */
 export const saveLocationToFirebase = async (
@@ -169,6 +196,47 @@ export const saveStopsProgressToFirebase = async (
     console.error("Error saving stops progress to Firebase:", error);
     throw error;
   }
+};
+
+/**
+ * Write a single stop as "reached" and update currentStop (one write, no full-list spam).
+ * Use this when the driver taps "Mark Reached" so the backend triggers once and sends one notification.
+ */
+export const markStopReachedInRTDB = async (
+  busNumber: string,
+  reachedStopId: string,
+  reachedAt: number,
+  nextCurrentStop: {
+    id: string;
+    name: string;
+    order: number;
+    status: string;
+  } | null
+): Promise<void> => {
+  const busRoot = `buses/${busNumber}`;
+  const updates: Record<string, unknown> = {
+    [`${busRoot}/stops/${reachedStopId}/status`]: "reached",
+    [`${busRoot}/stops/${reachedStopId}/reachedAt`]: reachedAt,
+    [`${busRoot}/currentStop`]: nextCurrentStop
+      ? removeUndefined({
+          stopId: nextCurrentStop.id,
+          name: nextCurrentStop.name,
+          order: nextCurrentStop.order,
+          status: nextCurrentStop.status,
+          updatedAt: serverTimestamp(),
+        })
+      : removeUndefined({
+          stopId: null,
+          name: null,
+          order: null,
+          status: null,
+          updatedAt: serverTimestamp(),
+        }),
+  };
+  if (nextCurrentStop) {
+    updates[`${busRoot}/stops/${nextCurrentStop.id}/status`] = "current";
+  }
+  await update(ref(database), updates);
 };
 
 /**

@@ -11,7 +11,7 @@ const statusConfig: Record<StopStatus, { label: string; className: string }> = {
     className: 'bg-success text-success-foreground',
   },
   current: {
-    label: 'Current',
+    label: 'On the Way',
     className: 'bg-accent text-accent-foreground animate-pulse-subtle',
   },
   pending: {

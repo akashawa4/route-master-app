@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { watchLocation, clearWatch, LocationData, LocationError } from '@/services/locationService';
-import { saveLocationToFirebase, updateRouteState } from '@/services/firebaseService';
+import { saveLocationToFirebase } from '@/services/firebaseService';
 import { DriverInfo } from '@/types/driver';
 import { RouteState } from '@/types/driver';
 
@@ -107,13 +107,7 @@ export const useLocationTracking = ({
     );
 
     watchIdRef.current = watchId;
-
-    // Update route state in Firebase
-    const currentDriver = driverRef.current;
-    const currentRouteState = routeStateRef.current;
-    updateRouteState(currentDriver.id, currentDriver.route.busNumber, currentRouteState).catch((err) => {
-      console.error('Failed to update route state:', err);
-    });
+    // routeState is written only from MainRoutePage (start/finish) to avoid repeated triggers
   }, []);
 
   // Effect to manage tracking based on isActive and routeState
@@ -129,15 +123,6 @@ export const useLocationTracking = ({
       stopTracking();
     };
   }, [isActive, routeState, startTracking, stopTracking]);
-
-  // Update route state in Firebase when it changes
-  useEffect(() => {
-    if (isTracking && driver) {
-      updateRouteState(driver.id, driver.route.busNumber, routeState).catch((err) => {
-        console.error('Failed to update route state:', err);
-      });
-    }
-  }, [routeState, isTracking, driver]);
 
   return {
     currentLocation,

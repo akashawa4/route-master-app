@@ -162,3 +162,115 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
 export const isAuthenticated = (): boolean => {
   return auth.currentUser !== null;
 };
+
+const DRIVER_SESSION_KEY = "driver_session";
+
+/**
+ * Save driver session to localStorage for persistence across page refreshes
+ */
+export const saveDriverSession = (driver: DriverInfo): void => {
+  try {
+    localStorage.setItem(DRIVER_SESSION_KEY, JSON.stringify(driver));
+  } catch (e) {
+    console.warn("Failed to save driver session to localStorage:", e);
+  }
+};
+
+/**
+ * Clear driver session from localStorage
+ */
+export const clearDriverSession = (): void => {
+  try {
+    localStorage.removeItem(DRIVER_SESSION_KEY);
+  } catch (e) {
+    console.warn("Failed to clear driver session from localStorage:", e);
+  }
+};
+
+/**
+ * Get saved driver session from localStorage
+ */
+export const getSavedDriverSession = (): DriverInfo | null => {
+  try {
+    const saved = localStorage.getItem(DRIVER_SESSION_KEY);
+    if (saved) {
+      return JSON.parse(saved) as DriverInfo;
+    }
+  } catch (e) {
+    console.warn("Failed to get driver session from localStorage:", e);
+  }
+  return null;
+};
+
+/**
+ * Restore driver session from Firebase Auth user (used on page refresh).
+ * Extracts driverId from user's email and fetches driver data from Firestore.
+ */
+export const restoreDriverSession = async (user: User): Promise<DriverInfo | null> => {
+  try {
+    // Extract driverId from email (e.g., "DRV-001@driverapp.com" → "DRV-001")
+    const email = user.email;
+    if (!email) return null;
+
+    const driverId = email.split("@")[0];
+    if (!driverId) return null;
+
+    // Query driver by driverId field
+    const driversQuery = query(
+      collection(firestore, COLLECTIONS.DRIVERS),
+      where("driverId", "==", driverId)
+    );
+
+    const querySnapshot = await getDocs(driversQuery);
+    if (querySnapshot.empty) {
+      console.warn("Driver not found in Firestore for:", driverId);
+      return null;
+    }
+
+    const driverDoc = querySnapshot.docs[0];
+    const driverData = driverDoc.data();
+
+    // Fetch route data (same logic as authenticateDriver)
+    let routeId: string | null = null;
+    let busNumber: string | null = null;
+
+    if (driverData.assignedBusId) {
+      try {
+        const busDocRef = doc(firestore, COLLECTIONS.BUSES, driverData.assignedBusId);
+        const busDoc = await getDoc(busDocRef);
+
+        if (busDoc.exists()) {
+          const busData = busDoc.data();
+          routeId = busData.assignedRouteId;
+          busNumber = busData.busNumber;
+        }
+      } catch (busError) {
+        console.error("Error fetching bus data:", busError);
+      }
+    }
+
+    if (!routeId) {
+      routeId = driverData.routeId || driverData.assignedRouteId || null;
+    }
+
+    if (!routeId) {
+      console.warn("Driver has no associated route:", driverId);
+      return null;
+    }
+
+    const route = await getRouteById(routeId, busNumber || undefined);
+    if (!route) {
+      console.warn("Route not found for driver:", driverId);
+      return null;
+    }
+
+    return {
+      id: driverData.driverId || driverDoc.id,
+      name: driverData.name || "",
+      route: route,
+    };
+  } catch (error) {
+    console.error("Error restoring driver session:", error);
+    return null;
+  }
+};

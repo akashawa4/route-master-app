@@ -2,12 +2,19 @@ import { useState, useEffect } from 'react';
 import { LoginPage } from './LoginPage';
 import { MainRoutePage } from './MainRoutePage';
 import { DriverInfo } from '@/types/driver';
-import { authenticateDriver, onAuthStateChange, signOutDriver } from '@/services/authService';
+import { 
+  authenticateDriver, 
+  signOutDriver, 
+  saveDriverSession, 
+  clearDriverSession, 
+  getSavedDriverSession 
+} from '@/services/authService';
 
 const Index = () => {
   const [driver, setDriver] = useState<DriverInfo | null>(null);
   const [loginError, setLoginError] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(true); // true until auth state is checked
 
   const handleLogin = async (driverId: string, password: string) => {
     setIsLoading(true);
@@ -19,6 +26,7 @@ const Index = () => {
       
       if (result) {
         setDriver(result);
+        saveDriverSession(result); // Save to localStorage for persistence
       } else {
         setLoginError('Invalid Driver ID or Password. Please try again.');
       }
@@ -36,21 +44,31 @@ const Index = () => {
     } catch (error) {
       console.error('Error signing out:', error);
     }
+    clearDriverSession(); // Clear from localStorage
     setDriver(null);
     setLoginError(undefined);
   };
 
-  // Listen to auth state changes
+  // Restore session from localStorage on page load
   useEffect(() => {
-    const unsubscribe = onAuthStateChange((user) => {
-      if (!user) {
-        // User signed out
-        setDriver(null);
-      }
-    });
-
-    return () => unsubscribe();
+    const savedDriver = getSavedDriverSession();
+    if (savedDriver) {
+      setDriver(savedDriver);
+    }
+    setIsRestoring(false);
   }, []);
+
+  // Show loading while restoring session on page refresh
+  if (isRestoring) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (driver) {
     return <MainRoutePage driver={driver} onLogout={handleLogout} />;

@@ -8,7 +8,12 @@ import { LogOut, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLocationTracking } from '@/hooks/useLocationTracking';
 import { toast } from 'sonner';
-import { saveStopsProgressToFirebase } from '@/services/firebaseService';
+import {
+  markStopReachedInRTDB,
+  saveStopsProgressToFirebase,
+  updateRouteState,
+  writeBusLocationMeta,
+} from '@/services/firebaseService';
 import { finishTrip, markStopReached, startTrip, updateTripRouteState } from '@/services/tripService';
 
 interface MainRoutePageProps {
@@ -54,24 +59,48 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
       setMessage(null);
       setActiveTripId(null);
 
-      // Persist reset stops back to Realtime Database (so student app sees fresh trip state)
+      // Persist reset stops and routeState so next Start is not_started → in_progress (triggers notification)
+      const busNum = driver.route.busNumber;
       saveStopsProgressToFirebase(
-        driver.route.busNumber,
+        busNum,
         resetStops.map((s) => ({ id: s.id, name: s.name, order: s.order, status: s.status })),
       ).catch((e) => console.error("Failed to save reset stops progress:", e));
+      updateRouteState(driver.id, busNum, "not_started").catch((e) =>
+        console.error("Failed to write routeState not_started:", e),
+      );
     }, 8000); // give a short window for the completion popup/message
 
     return () => clearTimeout(resetTimer);
   }, [routeState, driver.route.stops]);
 
-  const handleStartRoute = () => {
+  const handleStartRoute = async () => {
+    // Prevent double Start so backend sees not_started → in_progress once (not in_progress → in_progress)
+    if (routeState === "in_progress") return;
+
     const nextStops = stops.map((stop, index) =>
       index === 0 ? { ...stop, status: 'current' as const } : { ...stop, status: 'pending' as const },
     );
+    const busNumber = driver.route.busNumber;
+    const routeId = driver.route.id;
+    const routeName = driver.route.name;
 
     setStops(nextStops);
     setRouteState('in_progress');
     setMessage({ type: 'info', text: 'Route started. GPS tracking active. Drive safely!' });
+
+    // 1) Write location meta first so Cloud Function has routeId when routeState triggers
+    writeBusLocationMeta(busNumber, routeId, routeName, driver.name, 'in_progress').catch((e) =>
+      console.error('Failed to write bus location meta:', e),
+    );
+    // 2) Then routeState once: not_started → in_progress (triggers notifyStudentsRouteStarted)
+    updateRouteState(driver.id, busNumber, 'in_progress').catch((e) =>
+      console.error('Failed to update route state:', e),
+    );
+    // 3) Stops progress (initial: first=current, rest=pending; do not overwrite "reached" later)
+    saveStopsProgressToFirebase(
+      busNumber,
+      nextStops.map((s) => ({ id: s.id, name: s.name, order: s.order, status: s.status })),
+    ).catch((e) => console.error('Failed to save stops progress:', e));
 
     // Create a Firestore trip history doc (trips collection)
     startTrip({
@@ -97,12 +126,6 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
       })
       .catch((e) => console.error("Failed to start trip history:", e));
 
-    // Save stop progress to Realtime Database (under buses/{busNumber})
-    saveStopsProgressToFirebase(
-      driver.route.busNumber,
-      nextStops.map((s) => ({ id: s.id, name: s.name, order: s.order, status: s.status })),
-    ).catch((e) => console.error("Failed to save stops progress:", e));
-    
     // Clear message after 3 seconds
     setTimeout(() => setMessage(null), 3000);
   };
@@ -146,14 +169,28 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
       }).catch((e) => console.error("Failed to update trip route state:", e));
     }
 
-    // Save stop progress to Realtime Database (under buses/{busNumber})
-    saveStopsProgressToFirebase(
+    // Single write for this stop only (triggers Cloud Function once; backend dedupes with notified flag)
+    const nextCurrent = nextStops.find((s) => s.status === "current") ?? null;
+    markStopReachedInRTDB(
       driver.route.busNumber,
-      nextStops.map((s) => ({ id: s.id, name: s.name, order: s.order, status: s.status })),
-    ).catch((e) => console.error("Failed to save stops progress:", e));
+      reachedStop.id,
+      Date.now(),
+      nextCurrent
+        ? {
+            id: nextCurrent.id,
+            name: nextCurrent.name,
+            order: nextCurrent.order,
+            status: nextCurrent.status,
+          }
+        : null,
+    ).catch((e) => console.error("Failed to mark stop reached in RTDB:", e));
 
     if (isLastStop) {
       setRouteState('completed');
+      // Write routeState completed so backend can clear notification flags for next trip
+      updateRouteState(driver.id, driver.route.busNumber, 'completed').catch((e) =>
+        console.error('Failed to update route state:', e),
+      );
 
       // Finalize trip history in Firestore
       if (activeTripId) {
