@@ -21,7 +21,8 @@ export const useLocationTracking = ({
   const [isTracking, setIsTracking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const watchIdRef = useRef<number | null>(null);
-  const lastUpdateRef = useRef<number>(0);
+  const intervalIdRef = useRef<number | null>(null);
+  const lastLocationRef = useRef<LocationData | null>(null);
   const driverRef = useRef(driver);
   const routeStateRef = useRef(routeState);
   const updateIntervalRef = useRef(updateInterval);
@@ -41,6 +42,10 @@ export const useLocationTracking = ({
       clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
+    if (intervalIdRef.current !== null) {
+      window.clearInterval(intervalIdRef.current);
+      intervalIdRef.current = null;
+    }
     setIsTracking(false);
     setError(null);
   }, []);
@@ -57,46 +62,7 @@ export const useLocationTracking = ({
     const watchId = watchLocation(
       (location) => {
         setCurrentLocation(location);
-        const now = Date.now();
-
-        // Only update Firebase if enough time has passed since last update
-        if (now - lastUpdateRef.current >= updateIntervalRef.current) {
-          const currentDriver = driverRef.current;
-          const currentRouteState = routeStateRef.current;
-
-          saveLocationToFirebase(
-            currentDriver.id,
-            currentDriver.name,
-            currentDriver.route.busNumber,
-            currentDriver.route.id,
-            currentDriver.route.name,
-            currentRouteState,
-            location
-          )
-            .then(() => {
-              // Successfully saved - clear error and reset error counter
-              consecutiveErrorsRef.current = 0;
-              // Only clear error if it was a save error, not a GPS permission error
-              if (lastErrorRef.current && lastErrorRef.current.includes('save location')) {
-                setError(null);
-                lastErrorRef.current = null;
-              }
-            })
-            .catch((err) => {
-              console.error('Failed to save location:', err);
-              consecutiveErrorsRef.current += 1;
-              
-              // Only show error to user after multiple consecutive failures
-              // This prevents showing temporary network issues
-              if (consecutiveErrorsRef.current >= 3) {
-                const errorMsg = 'Failed to save location to server. Check your connection.';
-                setError(errorMsg);
-                lastErrorRef.current = errorMsg;
-              }
-            });
-
-          lastUpdateRef.current = now;
-        }
+        lastLocationRef.current = location;
       },
       (locationError: LocationError) => {
         // GPS permission or location errors - always show these
@@ -107,6 +73,48 @@ export const useLocationTracking = ({
     );
 
     watchIdRef.current = watchId;
+
+    // Push location to Firebase on a fixed interval using the latest known position
+    intervalIdRef.current = window.setInterval(() => {
+      const location = lastLocationRef.current;
+      if (!location) {
+        return;
+      }
+
+      const currentDriver = driverRef.current;
+      const currentRouteState = routeStateRef.current;
+
+      saveLocationToFirebase(
+        currentDriver.id,
+        currentDriver.name,
+        currentDriver.route.busNumber,
+        currentDriver.route.id,
+        currentDriver.route.name,
+        currentRouteState,
+        location
+      )
+        .then(() => {
+          // Successfully saved - clear error and reset error counter
+          consecutiveErrorsRef.current = 0;
+          // Only clear error if it was a save error, not a GPS permission error
+          if (lastErrorRef.current && lastErrorRef.current.includes('save location')) {
+            setError(null);
+            lastErrorRef.current = null;
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to save location:', err);
+          consecutiveErrorsRef.current += 1;
+          
+          // Only show error to user after multiple consecutive failures
+          // This prevents showing temporary network issues
+          if (consecutiveErrorsRef.current >= 3) {
+            const errorMsg = 'Failed to save location to server. Check your connection.';
+            setError(errorMsg);
+            lastErrorRef.current = errorMsg;
+          }
+        });
+    }, updateIntervalRef.current);
     // routeState is written only from MainRoutePage (start/finish) to avoid repeated triggers
   }, []);
 

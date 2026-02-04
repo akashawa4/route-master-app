@@ -14,7 +14,7 @@ import {
   updateRouteState,
   writeBusLocationMeta,
 } from '@/services/firebaseService';
-import { finishTrip, markStopReached, startTrip, updateTripRouteState } from '@/services/tripService';
+import { finishTrip, getActiveTrip, markStopReached, startTrip, updateTripRouteState } from '@/services/tripService';
 
 interface MainRoutePageProps {
   driver: DriverInfo;
@@ -41,6 +41,104 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
 
   const currentStop = currentStopIndex >= 0 ? stops[currentStopIndex] : undefined;
   const isLastStop = currentStopIndex === stops.length - 1;
+
+  // Restore active trip state on mount (e.g., after app refresh/close)
+  useEffect(() => {
+    let isMounted = true;
+
+    const restoreTripState = async () => {
+      try {
+        const activeTrip = await getActiveTrip(driver.route.busNumber);
+        
+        if (!isMounted || !activeTrip) {
+          return; // No active trip, start fresh
+        }
+
+        // Restore stops status from trip data
+        const restoredStops = driver.route.stops.map((stop) => {
+          const tripStop = activeTrip.stops[stop.id];
+          if (tripStop) {
+            return {
+              ...stop,
+              status: tripStop.status,
+            };
+          }
+          return stop;
+        });
+
+        // If currentStop exists in trip, ensure it's marked as current
+        if (activeTrip.currentStop) {
+          const currentStopIndex = restoredStops.findIndex(
+            (s) => s.id === activeTrip.currentStop!.id
+          );
+          if (currentStopIndex >= 0) {
+            restoredStops[currentStopIndex].status = 'current';
+            // Mark previous stops as reached
+            for (let i = 0; i < currentStopIndex; i++) {
+              if (restoredStops[i].status !== 'reached') {
+                restoredStops[i].status = 'reached';
+              }
+            }
+            // Mark later stops as pending
+            for (let i = currentStopIndex + 1; i < restoredStops.length; i++) {
+              if (restoredStops[i].status !== 'reached') {
+                restoredStops[i].status = 'pending';
+              }
+            }
+          }
+        }
+
+        if (!isMounted) return;
+
+        // Restore state
+        setStops(restoredStops);
+        setRouteState(activeTrip.routeState);
+        setActiveTripId(activeTrip.tripId);
+
+        // Sync RTDB state to match restored trip
+        const busNumber = driver.route.busNumber;
+        const routeId = driver.route.id;
+        const routeName = driver.route.name;
+
+        // Update routeState in RTDB
+        updateRouteState(driver.id, busNumber, activeTrip.routeState).catch((e) =>
+          console.error('Failed to sync routeState to RTDB:', e)
+        );
+
+        // Update stops progress in RTDB
+        saveStopsProgressToFirebase(
+          busNumber,
+          restoredStops.map((s) => ({ id: s.id, name: s.name, order: s.order, status: s.status }))
+        ).catch((e) => console.error('Failed to sync stops progress to RTDB:', e));
+
+        // Update location meta in RTDB
+        writeBusLocationMeta(busNumber, routeId, routeName, driver.name, activeTrip.routeState).catch(
+          (e) => console.error('Failed to sync location meta to RTDB:', e)
+        );
+
+        setMessage({
+          type: 'info',
+          text: 'Route state restored. Continuing from where you left off.',
+        });
+        setTimeout(() => setMessage(null), 3000);
+      } catch (error) {
+        console.error('Error restoring trip state:', error);
+        if (isMounted) {
+          setMessage({
+            type: 'warning',
+            text: 'Could not restore previous route state. Starting fresh.',
+          });
+          setTimeout(() => setMessage(null), 3000);
+        }
+      }
+    };
+
+    restoreTripState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [driver]);
 
   // After a trip is completed, automatically reset the screen back to the
   // initial "START ROUTE" state so the driver can begin the next trip.

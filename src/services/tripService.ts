@@ -2,8 +2,11 @@ import {
   addDoc,
   collection,
   doc,
+  getDocs,
+  query,
   serverTimestamp,
   updateDoc,
+  where,
   type FieldValue,
 } from "firebase/firestore";
 import { firestore } from "@/lib/firebase";
@@ -140,5 +143,69 @@ export async function finishTrip(params: { busNumber: string; tripId: string }):
     finishedAtClient: Date.now(),
     updatedAt: serverTimestamp(),
   });
+}
+
+/**
+ * Gets the active (in_progress) trip for a bus number.
+ * Returns null if no active trip exists.
+ */
+export async function getActiveTrip(busNumber: string): Promise<{
+  tripId: string;
+  routeState: RouteState;
+  stops: Record<string, TripStopSnapshot>;
+  currentStop: { id: string; name: string; order: number; status: StopStatus } | null;
+} | null> {
+  try {
+    const tripsRef = busTripsCollection(busNumber);
+    const activeTripsQuery = query(
+      tripsRef,
+      where("status", "==", "in_progress")
+    );
+
+    const querySnapshot = await getDocs(activeTripsQuery);
+    
+    if (querySnapshot.empty) {
+      return null;
+    }
+
+    // Get the most recent active trip (by startedAtClient or updatedAt)
+    const trips = querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    // Sort by startedAtClient descending (most recent first)
+    trips.sort((a, b) => {
+      const aTime = a.startedAtClient || 0;
+      const bTime = b.startedAtClient || 0;
+      return bTime - aTime;
+    });
+
+    const activeTrip = trips[0];
+    if (!activeTrip) {
+      return null;
+    }
+
+    // Convert stops map to array and back to ensure proper typing
+    const stopsMap = activeTrip.stops || {};
+    const currentStopData = activeTrip.currentStop || null;
+
+    return {
+      tripId: activeTrip.id,
+      routeState: activeTrip.routeState || "in_progress",
+      stops: stopsMap,
+      currentStop: currentStopData
+        ? {
+            id: currentStopData.id,
+            name: currentStopData.name,
+            order: currentStopData.order,
+            status: currentStopData.status,
+          }
+        : null,
+    };
+  } catch (error) {
+    console.error("Error fetching active trip:", error);
+    return null;
+  }
 }
 
