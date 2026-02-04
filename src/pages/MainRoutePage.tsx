@@ -32,7 +32,7 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
     driver,
     routeState,
     isActive: true,
-    updateInterval: 5000 // Update every 5 seconds
+    updateInterval: 2000 // Update every 2 seconds for smoother live tracking
   });
 
   const currentStopIndex = useMemo(() => {

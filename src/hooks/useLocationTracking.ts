@@ -8,14 +8,14 @@ interface UseLocationTrackingOptions {
   driver: DriverInfo;
   routeState: RouteState;
   isActive: boolean;
-  updateInterval?: number; // Update interval in milliseconds (default: 5000ms = 5 seconds)
+  updateInterval?: number; // Update interval in milliseconds (default: 2000ms = 2 seconds)
 }
 
 export const useLocationTracking = ({
   driver,
   routeState,
   isActive,
-  updateInterval = 5000
+  updateInterval = 2000
 }: UseLocationTrackingOptions) => {
   const [currentLocation, setCurrentLocation] = useState<LocationData | null>(null);
   const [isTracking, setIsTracking] = useState(false);
