@@ -3,12 +3,16 @@ import { watchLocation, clearWatch, LocationData, LocationError } from '@/servic
 import { saveLocationToFirebase } from '@/services/firebaseService';
 import { DriverInfo } from '@/types/driver';
 import { RouteState } from '@/types/driver';
+import { WakeLockManager, AppStateMonitor } from '@/utils/backgroundTracking';
+import { startForegroundService, stopForegroundService, StartForegroundServiceOptions } from '@/utils/foregroundService';
+import { checkPermissions } from '@/utils/permissions';
+import { Capacitor } from '@capacitor/core';
 
 interface UseLocationTrackingOptions {
   driver: DriverInfo;
   routeState: RouteState;
   isActive: boolean;
-  updateInterval?: number; // Update interval in milliseconds (default: 2000ms = 2 seconds)
+  updateInterval?: number;
 }
 
 export const useLocationTracking = ({
@@ -20,7 +24,8 @@ export const useLocationTracking = ({
   const [currentLocation, setCurrentLocation] = useState<LocationData | null>(null);
   const [isTracking, setIsTracking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const watchIdRef = useRef<number | null>(null);
+
+  const watchIdRef = useRef<string | number | null>(null);
   const intervalIdRef = useRef<number | null>(null);
   const lastLocationRef = useRef<LocationData | null>(null);
   const driverRef = useRef(driver);
@@ -28,6 +33,14 @@ export const useLocationTracking = ({
   const updateIntervalRef = useRef(updateInterval);
   const consecutiveErrorsRef = useRef<number>(0);
   const lastErrorRef = useRef<string | null>(null);
+  const wakeLockManagerRef = useRef<WakeLockManager>(new WakeLockManager());
+  const appStateMonitorRef = useRef<AppStateMonitor>(new AppStateMonitor());
+  const isNativeRef = useRef(Capacitor.isNativePlatform());
+
+  // Track if tracking operation is in progress to prevent race conditions
+  const isStartingRef = useRef(false);
+  const isStoppingRef = useRef(false);
+  const isTrackingRef = useRef(false);
 
   // Keep refs updated
   useEffect(() => {
@@ -37,7 +50,15 @@ export const useLocationTracking = ({
   }, [driver, routeState, updateInterval]);
 
   // Stop location tracking
-  const stopTracking = useCallback(() => {
+  const stopTracking = useCallback(async () => {
+    // Prevent multiple concurrent stop calls
+    if (isStoppingRef.current || !isTrackingRef.current) {
+      return;
+    }
+
+    isStoppingRef.current = true;
+    console.log('[LocationTracking] Stopping tracking...');
+
     if (watchIdRef.current !== null) {
       clearWatch(watchIdRef.current);
       watchIdRef.current = null;
@@ -46,91 +67,177 @@ export const useLocationTracking = ({
       window.clearInterval(intervalIdRef.current);
       intervalIdRef.current = null;
     }
+
+    // Stop foreground service (Android)
+    try {
+      await stopForegroundService();
+    } catch (err) {
+      console.error('[LocationTracking] Error stopping foreground service:', err);
+    }
+
+    // Release wake lock
+    await wakeLockManagerRef.current.release();
+
+    isTrackingRef.current = false;
     setIsTracking(false);
     setError(null);
+    isStoppingRef.current = false;
+    console.log('[LocationTracking] Tracking stopped');
   }, []);
 
   // Start location tracking
-  const startTracking = useCallback(() => {
-    if (watchIdRef.current !== null) {
-      return; // Already tracking
+  const startTracking = useCallback(async () => {
+    // Prevent multiple concurrent start calls or starting while already tracking
+    if (isStartingRef.current || isTrackingRef.current) {
+      console.log('[LocationTracking] Already tracking or starting, skipping');
+      return;
     }
 
+    isStartingRef.current = true;
+    console.log('[LocationTracking] Starting tracking...');
+
+    // Set tracking state immediately
+    isTrackingRef.current = true;
     setIsTracking(true);
     setError(null);
 
-    const watchId = watchLocation(
-      (location) => {
-        setCurrentLocation(location);
-        lastLocationRef.current = location;
-      },
-      (locationError: LocationError) => {
-        // GPS permission or location errors - always show these
-        setError(locationError.message);
-        lastErrorRef.current = locationError.message;
+    // Verify permissions before starting
+    try {
+      const permStatus = await checkPermissions();
+      console.log('[LocationTracking] Permission status:', permStatus);
+
+      if (permStatus.foregroundLocation !== 'granted') {
+        setError('Location permission not granted. Please grant all permissions.');
+        isTrackingRef.current = false;
         setIsTracking(false);
-      }
-    );
-
-    watchIdRef.current = watchId;
-
-    // Push location to Firebase on a fixed interval using the latest known position
-    intervalIdRef.current = window.setInterval(() => {
-      const location = lastLocationRef.current;
-      if (!location) {
+        isStartingRef.current = false;
         return;
       }
+    } catch (err) {
+      console.error('[LocationTracking] Error checking permissions:', err);
+    }
 
-      const currentDriver = driverRef.current;
-      const currentRouteState = routeStateRef.current;
+    const currentDriver = driverRef.current;
+    const currentRouteState = routeStateRef.current;
 
-      saveLocationToFirebase(
-        currentDriver.id,
-        currentDriver.name,
-        currentDriver.route.busNumber,
-        currentDriver.route.id,
-        currentDriver.route.name,
-        currentRouteState,
-        location
-      )
-        .then(() => {
-          // Successfully saved - clear error and reset error counter
-          consecutiveErrorsRef.current = 0;
-          // Only clear error if it was a save error, not a GPS permission error
-          if (lastErrorRef.current && lastErrorRef.current.includes('save location')) {
-            setError(null);
-            lastErrorRef.current = null;
+    const serviceOptions: StartForegroundServiceOptions = {
+      driverId: currentDriver.id,
+      driverName: currentDriver.name,
+      busNumber: currentDriver.route.busNumber,
+      routeId: currentDriver.route.id,
+      routeName: currentDriver.route.name,
+      routeState: currentRouteState,
+    };
+
+    try {
+      // Start foreground service (Android) - this starts NATIVE GPS tracking
+      console.log('[LocationTracking] Starting foreground service with options:', serviceOptions);
+      await startForegroundService(serviceOptions);
+      console.log('[LocationTracking] Foreground service started successfully');
+
+      // Acquire wake lock
+      await wakeLockManagerRef.current.acquire();
+
+      // On native platforms, GPS tracking is handled by the foreground service
+      // We still use JavaScript location for UI updates only
+      if (isNativeRef.current) {
+        try {
+          const watchId = await watchLocation(
+            (location) => {
+              setCurrentLocation(location);
+              lastLocationRef.current = location;
+            },
+            (locationError: LocationError) => {
+              console.error('[LocationTracking] JS location error (UI only):', locationError);
+              // Don't stop tracking on native - the service continues independently
+            }
+          );
+          watchIdRef.current = watchId;
+        } catch (err) {
+          console.warn('[LocationTracking] JS watch failed, but native service is running:', err);
+        }
+      } else {
+        // Web platform - need full JS tracking
+        const watchId = await watchLocation(
+          (location) => {
+            setCurrentLocation(location);
+            lastLocationRef.current = location;
+          },
+          (locationError: LocationError) => {
+            console.error('[LocationTracking] Location error:', locationError);
+            setError(locationError.message);
+            lastErrorRef.current = locationError.message;
           }
-        })
-        .catch((err) => {
-          console.error('Failed to save location:', err);
-          consecutiveErrorsRef.current += 1;
-          
-          // Only show error to user after multiple consecutive failures
-          // This prevents showing temporary network issues
-          if (consecutiveErrorsRef.current >= 3) {
-            const errorMsg = 'Failed to save location to server. Check your connection.';
-            setError(errorMsg);
-            lastErrorRef.current = errorMsg;
-          }
-        });
-    }, updateIntervalRef.current);
-    // routeState is written only from MainRoutePage (start/finish) to avoid repeated triggers
+        );
+        watchIdRef.current = watchId;
+
+        // On web, push to Firebase from JavaScript
+        intervalIdRef.current = window.setInterval(() => {
+          const location = lastLocationRef.current;
+          if (!location) return;
+
+          const driver = driverRef.current;
+          const routeState = routeStateRef.current;
+
+          saveLocationToFirebase(
+            driver.id,
+            driver.name,
+            driver.route.busNumber,
+            driver.route.id,
+            driver.route.name,
+            routeState,
+            location
+          )
+            .then(() => {
+              consecutiveErrorsRef.current = 0;
+              if (lastErrorRef.current?.includes('save location')) {
+                setError(null);
+                lastErrorRef.current = null;
+              }
+            })
+            .catch((err) => {
+              console.error('Failed to save location:', err);
+              consecutiveErrorsRef.current += 1;
+
+              if (consecutiveErrorsRef.current >= 3) {
+                const errorMsg = 'Failed to save location to server. Check your connection.';
+                setError(errorMsg);
+                lastErrorRef.current = errorMsg;
+              }
+            });
+        }, updateIntervalRef.current);
+      }
+
+      console.log('[LocationTracking] Tracking started successfully');
+    } catch (err) {
+      console.error('[LocationTracking] Failed to start tracking:', err);
+      isTrackingRef.current = false;
+      setIsTracking(false);
+      setError('Failed to start GPS tracking. Please check permissions.');
+    } finally {
+      isStartingRef.current = false;
+    }
   }, []);
 
   // Effect to manage tracking based on isActive and routeState
   useEffect(() => {
-    if (isActive && routeState === 'in_progress') {
+    const shouldTrack = isActive && routeState === 'in_progress';
+
+    if (shouldTrack && !isTrackingRef.current) {
       startTracking();
-    } else {
+    } else if (!shouldTrack && isTrackingRef.current) {
       stopTracking();
     }
+  }, [isActive, routeState]); // Removed startTracking/stopTracking from deps to prevent loops
 
-    // Cleanup on unmount or when dependencies change
+  // Cleanup on unmount
+  useEffect(() => {
     return () => {
-      stopTracking();
+      if (isTrackingRef.current) {
+        stopTracking();
+      }
     };
-  }, [isActive, routeState, startTracking, stopTracking]);
+  }, [stopTracking]);
 
   return {
     currentLocation,

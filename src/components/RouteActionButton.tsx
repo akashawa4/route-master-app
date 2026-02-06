@@ -22,10 +22,10 @@ export function RouteActionButton({
       <Button
         onClick={onStartRoute}
         size="lg"
-        className="w-full h-16 text-lg font-bold gap-3 shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all"
+        className="action-button shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40"
       >
-        <Play className="w-6 h-6" />
-        START ROUTE
+        <Play className="w-5 h-5 sm:w-6 sm:h-6" />
+        <span>START ROUTE</span>
       </Button>
     );
   }
@@ -36,22 +36,22 @@ export function RouteActionButton({
         <Button
           onClick={onMarkReached}
           size="lg"
-          className="w-full h-16 text-lg font-bold gap-3 bg-success hover:bg-success/90 shadow-lg shadow-success/30 hover:shadow-xl hover:shadow-success/40 transition-all animate-pulse"
+          className="action-button bg-success hover:bg-success/90 shadow-lg shadow-success/30 hover:shadow-xl hover:shadow-success/40 animate-pulse"
         >
-          <Flag className="w-6 h-6" />
-          FINISH ROUTE
+          <Flag className="w-5 h-5 sm:w-6 sm:h-6" />
+          <span>FINISH ROUTE</span>
         </Button>
       );
     }
-    
+
     return (
       <Button
         onClick={onMarkReached}
         size="lg"
-        className="w-full h-16 text-lg font-bold gap-3 bg-success hover:bg-success/90 shadow-lg shadow-success/30 hover:shadow-xl hover:shadow-success/40 transition-all"
+        className="action-button bg-success hover:bg-success/90 shadow-lg shadow-success/30 hover:shadow-xl hover:shadow-success/40"
       >
-        <CheckCircle className="w-6 h-6" />
-        MARK CURRENT STOP AS REACHED
+        <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6" />
+        <span className="text-center leading-tight">MARK CURRENT STOP AS REACHED</span>
       </Button>
     );
   }
@@ -61,10 +61,10 @@ export function RouteActionButton({
       disabled
       size="lg"
       variant="secondary"
-      className="w-full h-14 text-lg font-semibold gap-2"
+      className="action-button opacity-80"
     >
-      <Flag className="w-5 h-5" />
-      ROUTE COMPLETED
+      <Flag className="w-5 h-5 sm:w-6 sm:h-6" />
+      <span>ROUTE COMPLETED</span>
     </Button>
   );
 }

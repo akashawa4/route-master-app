@@ -10,6 +10,7 @@ import { getAuth } from "firebase/auth";
 const firebaseConfig = {
   apiKey: "AIzaSyBe12v3ULPNlAxapSZ1zu5eFoxxHzpY-rU",
   authDomain: "college-bus-tracking-903e7.firebaseapp.com",
+  databaseURL: "https://college-bus-tracking-903e7-default-rtdb.firebaseio.com",
   projectId: "college-bus-tracking-903e7",
   storageBucket: "college-bus-tracking-903e7.firebasestorage.app",
   messagingSenderId: "898454276553",

@@ -8,19 +8,25 @@ interface RouteHeaderProps {
 
 export function RouteHeader({ driverName, busNumber, routeName }: RouteHeaderProps) {
   return (
-    <header className="bg-card border-b border-border">
-      <div className="container py-4">
-        <h1 className="text-xl font-bold text-foreground mb-3">
+    <header className="bg-card border-b border-border sticky top-0 z-10 shadow-sm safe-area-inset-top">
+      <div className="container py-2.5 sm:py-3">
+        {/* Driver Welcome */}
+        <h1 className="text-base sm:text-lg font-bold text-foreground mb-2 truncate">
           Welcome, {driverName}
         </h1>
-        <div className="flex flex-wrap gap-3">
-          <div className="flex items-center gap-2 bg-primary/10 text-primary px-3 py-2 rounded-lg border border-primary/20">
-            <Bus className="w-5 h-5" />
-            <span className="font-semibold">{busNumber}</span>
+
+        {/* Info Chips - Responsive */}
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+          {/* Bus Number Chip */}
+          <div className="info-chip bg-primary/10 text-primary border-primary/20 flex-shrink-0">
+            <Bus className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+            <span>{busNumber}</span>
           </div>
-          <div className="flex items-center gap-2 bg-accent/10 text-accent px-3 py-2 rounded-lg border border-accent/20">
-            <Route className="w-5 h-5" />
-            <span className="font-semibold">{routeName}</span>
+
+          {/* Route Name Chip - Can grow and truncate */}
+          <div className="info-chip bg-accent/10 text-accent border-accent/20 min-w-0 flex-1 max-w-full">
+            <Route className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+            <span className="truncate">{routeName}</span>
           </div>
         </div>
       </div>

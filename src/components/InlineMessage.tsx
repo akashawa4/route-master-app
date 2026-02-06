@@ -35,12 +35,15 @@ export function InlineMessage({ type, message }: InlineMessageProps) {
 
   return (
     <div className={cn(
-      'flex items-center gap-2',
-      isSuccess ? 'text-base font-semibold' : 'text-sm',
+      'flex items-start gap-2',
+      isSuccess ? 'text-sm sm:text-base font-semibold' : 'text-xs sm:text-sm',
       config.className
     )}>
-      <Icon className={cn('flex-shrink-0', isSuccess ? 'w-5 h-5' : 'w-4 h-4')} />
-      <span>{message}</span>
+      <Icon className={cn(
+        'flex-shrink-0 mt-0.5',
+        isSuccess ? 'w-4 h-4 sm:w-5 sm:h-5' : 'w-3.5 h-3.5 sm:w-4 sm:h-4'
+      )} />
+      <span className="leading-snug">{message}</span>
     </div>
   );
 }

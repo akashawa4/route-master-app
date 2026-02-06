@@ -5,9 +5,23 @@ export default {
   content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
   prefix: "",
   theme: {
+    // Mobile-first breakpoints
+    screens: {
+      'xs': '360px',   // Small phones (iPhone SE)
+      'sm': '480px',   // Regular phones
+      'md': '640px',   // Large phones / small tablets
+      'lg': '768px',   // Tablets
+      'xl': '1024px',  // Desktop
+      '2xl': '1280px', // Large desktop
+    },
     container: {
       center: true,
-      padding: "1rem",
+      padding: {
+        DEFAULT: "0.75rem",
+        xs: "1rem",
+        sm: "1rem",
+        md: "1.5rem",
+      },
       screens: {
         "2xl": "1400px",
       },

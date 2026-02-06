@@ -27,6 +27,20 @@ const Index = () => {
       if (result) {
         setDriver(result);
         saveDriverSession(result); // Save to localStorage for persistence
+        
+        // Request permissions after login (non-blocking, native dialogs)
+        // Like delivery apps - ask but don't block if denied
+        if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform()) {
+          setTimeout(async () => {
+            try {
+              const { requestPermissionsDirect } = await import('@/utils/requestPermissionsDirect');
+              await requestPermissionsDirect();
+            } catch (permError) {
+              // Silently fail - permissions will be requested when starting route
+              console.log('Permission request after login skipped:', permError);
+            }
+          }, 1000); // Small delay so login completes first
+        }
       } else {
         setLoginError('Invalid Driver ID or Password. Please try again.');
       }
