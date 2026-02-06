@@ -13,13 +13,15 @@ interface UseLocationTrackingOptions {
   routeState: RouteState;
   isActive: boolean;
   updateInterval?: number;
+  currentStopName?: string;
 }
 
 export const useLocationTracking = ({
   driver,
   routeState,
   isActive,
-  updateInterval = 2000
+  updateInterval = 2000,
+  currentStopName = ''
 }: UseLocationTrackingOptions) => {
   const [currentLocation, setCurrentLocation] = useState<LocationData | null>(null);
   const [isTracking, setIsTracking] = useState(false);
@@ -31,6 +33,7 @@ export const useLocationTracking = ({
   const driverRef = useRef(driver);
   const routeStateRef = useRef(routeState);
   const updateIntervalRef = useRef(updateInterval);
+  const currentStopNameRef = useRef(currentStopName);
   const consecutiveErrorsRef = useRef<number>(0);
   const lastErrorRef = useRef<string | null>(null);
   const wakeLockManagerRef = useRef<WakeLockManager>(new WakeLockManager());
@@ -47,7 +50,8 @@ export const useLocationTracking = ({
     driverRef.current = driver;
     routeStateRef.current = routeState;
     updateIntervalRef.current = updateInterval;
-  }, [driver, routeState, updateInterval]);
+    currentStopNameRef.current = currentStopName;
+  }, [driver, routeState, updateInterval, currentStopName]);
 
   // Stop location tracking
   const stopTracking = useCallback(async () => {
@@ -119,6 +123,7 @@ export const useLocationTracking = ({
 
     const currentDriver = driverRef.current;
     const currentRouteState = routeStateRef.current;
+    const stopName = currentStopNameRef.current;
 
     const serviceOptions: StartForegroundServiceOptions = {
       driverId: currentDriver.id,
@@ -127,6 +132,7 @@ export const useLocationTracking = ({
       routeId: currentDriver.route.id,
       routeName: currentDriver.route.name,
       routeState: currentRouteState,
+      currentStopName: stopName,
     };
 
     try {

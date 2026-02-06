@@ -29,19 +29,21 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
   const [activeTripId, setActiveTripId] = useState<string | null>(null);
   const [showBackgroundLocationPrompt, setShowBackgroundLocationPrompt] = useState(false);
 
+  // Get current stop name for notification display
+  const currentStopIndex = useMemo(() => {
+    return stops.findIndex((stop) => stop.status === 'current');
+  }, [stops]);
+  const currentStop = currentStopIndex >= 0 ? stops[currentStopIndex] : undefined;
+
   // Location tracking hook - automatically starts when route is in progress
   const { currentLocation, isTracking, error: locationError } = useLocationTracking({
     driver,
     routeState,
     isActive: true,
-    updateInterval: 2000
+    updateInterval: 2000,
+    currentStopName: currentStop?.name,
   });
 
-  const currentStopIndex = useMemo(() => {
-    return stops.findIndex((stop) => stop.status === 'current');
-  }, [stops]);
-
-  const currentStop = currentStopIndex >= 0 ? stops[currentStopIndex] : undefined;
   const isLastStop = currentStopIndex === stops.length - 1;
 
   // Restore active trip state on mount

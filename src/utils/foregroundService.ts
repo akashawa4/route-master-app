@@ -9,6 +9,7 @@ export interface LocationServicePlugin {
     routeId?: string;
     routeName?: string;
     routeState?: string;
+    currentStopName?: string;
   }): Promise<{ success: boolean; message?: string }>;
   stopForegroundService(): Promise<{ success: boolean }>;
   updateRouteInfo(options: {
@@ -18,6 +19,7 @@ export interface LocationServicePlugin {
     routeId?: string;
     routeName?: string;
     routeState?: string;
+    currentStopName?: string;
   }): Promise<{ success: boolean; message?: string }>;
 }
 
@@ -32,12 +34,14 @@ export interface StartForegroundServiceOptions {
   routeId: string;
   routeName: string;
   routeState: 'not_started' | 'in_progress' | 'completed';
+  currentStopName?: string;
 }
 
 /**
  * Start Android foreground service for continuous GPS tracking.
  * This keeps the app alive and tracking GPS even when minimized or screen is off.
  * GPS tracking happens natively - does NOT depend on WebView/JavaScript.
+ * Shows a persistent "Trip Ongoing" notification like Swiggy/Zomato.
  */
 export async function startForegroundService(options: StartForegroundServiceOptions): Promise<void> {
   if (!Capacitor.isNativePlatform()) {
@@ -54,6 +58,7 @@ export async function startForegroundService(options: StartForegroundServiceOpti
       routeId: options.routeId,
       routeName: options.routeName,
       routeState: options.routeState,
+      currentStopName: options.currentStopName,
     });
     console.log('Foreground service started:', result);
   } catch (error) {
@@ -64,6 +69,7 @@ export async function startForegroundService(options: StartForegroundServiceOpti
 
 /**
  * Stop Android foreground service
+ * This will also remove the "Trip Ongoing" notification
  */
 export async function stopForegroundService(): Promise<void> {
   if (!Capacitor.isNativePlatform()) {
@@ -80,6 +86,7 @@ export async function stopForegroundService(): Promise<void> {
 
 /**
  * Update route info in the running foreground service
+ * This updates the notification with the current stop name
  */
 export async function updateForegroundServiceRouteInfo(options: StartForegroundServiceOptions): Promise<void> {
   if (!Capacitor.isNativePlatform()) {
@@ -94,9 +101,11 @@ export async function updateForegroundServiceRouteInfo(options: StartForegroundS
       routeId: options.routeId,
       routeName: options.routeName,
       routeState: options.routeState,
+      currentStopName: options.currentStopName,
     });
     console.log('Foreground service route info updated');
   } catch (error) {
     console.error('Error updating foreground service route info:', error);
   }
 }
+

@@ -21,6 +21,7 @@ public class LocationServicePlugin extends Plugin {
             String routeId = call.getString("routeId", "");
             String routeName = call.getString("routeName", "");
             String routeState = call.getString("routeState", "in_progress");
+            String currentStopName = call.getString("currentStopName", "");
 
             Intent serviceIntent = new Intent(getContext(), LocationTrackingService.class);
             serviceIntent.putExtra("driverId", driverId);
@@ -29,6 +30,7 @@ public class LocationServicePlugin extends Plugin {
             serviceIntent.putExtra("routeId", routeId);
             serviceIntent.putExtra("routeName", routeName);
             serviceIntent.putExtra("routeState", routeState);
+            serviceIntent.putExtra("currentStopName", currentStopName);
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 getContext().startForegroundService(serviceIntent);
@@ -62,8 +64,7 @@ public class LocationServicePlugin extends Plugin {
 
     @PluginMethod
     public void updateRouteInfo(PluginCall call) {
-        // This would require binding to the service - for simplicity, restart the
-        // service with new data
+        // Restart the service with updated data to update notification
         try {
             String driverId = call.getString("driverId", "");
             String driverName = call.getString("driverName", "");
@@ -71,11 +72,10 @@ public class LocationServicePlugin extends Plugin {
             String routeId = call.getString("routeId", "");
             String routeName = call.getString("routeName", "");
             String routeState = call.getString("routeState", "in_progress");
+            String currentStopName = call.getString("currentStopName", "");
 
-            // Restart service with updated info
-            Intent stopIntent = new Intent(getContext(), LocationTrackingService.class);
-            getContext().stopService(stopIntent);
-
+            // Just start the service again with updated info
+            // It will update the notification without stopping location updates
             Intent startIntent = new Intent(getContext(), LocationTrackingService.class);
             startIntent.putExtra("driverId", driverId);
             startIntent.putExtra("driverName", driverName);
@@ -83,6 +83,7 @@ public class LocationServicePlugin extends Plugin {
             startIntent.putExtra("routeId", routeId);
             startIntent.putExtra("routeName", routeName);
             startIntent.putExtra("routeState", routeState);
+            startIntent.putExtra("currentStopName", currentStopName);
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 getContext().startForegroundService(startIntent);
@@ -92,7 +93,7 @@ public class LocationServicePlugin extends Plugin {
 
             JSObject result = new JSObject();
             result.put("success", true);
-            result.put("message", "Route info updated");
+            result.put("message", "Route info and notification updated");
             call.resolve(result);
         } catch (Exception e) {
             call.reject("Failed to update route info: " + e.getMessage());

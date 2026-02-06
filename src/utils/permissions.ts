@@ -20,6 +20,7 @@ export interface PermissionsPlugin {
   openAppLocationSettings(): Promise<void>;
   getLocationPermissionLevel(): Promise<LocationPermissionLevel>;
   requestBackgroundLocationOnly(): Promise<{ status: string }>;
+  requestNotificationPermission(): Promise<{ status: string; notNeeded?: boolean }>;
 }
 
 let Permissions: PermissionsPlugin;
@@ -54,6 +55,10 @@ try {
     }),
     requestBackgroundLocationOnly: async () => ({
       status: 'granted',
+    }),
+    requestNotificationPermission: async () => ({
+      status: 'granted',
+      notNeeded: true,
     }),
   } as PermissionsPlugin;
 }
@@ -252,3 +257,19 @@ export async function requestBackgroundLocationOnly(): Promise<{ status: string 
   }
 }
 
+/**
+ * Request notification permission (Android 13+)
+ * Required to show foreground service notification
+ */
+export async function requestNotificationPermission(): Promise<{ status: string; notNeeded?: boolean }> {
+  if (!Capacitor.isNativePlatform()) {
+    return { status: 'granted', notNeeded: true };
+  }
+
+  try {
+    return await Permissions.requestNotificationPermission();
+  } catch (error) {
+    console.error('[Permissions] Error requesting notification permission:', error);
+    return { status: 'error' };
+  }
+}

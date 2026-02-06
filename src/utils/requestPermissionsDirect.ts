@@ -10,6 +10,7 @@ export async function requestPermissionsDirect(): Promise<{
   foregroundLocation: boolean;
   backgroundLocation: boolean;
   batteryOptimization: boolean;
+  notifications: boolean;
   needsBackgroundPrompt: boolean;
 }> {
   if (!Capacitor.isNativePlatform()) {
@@ -20,6 +21,7 @@ export async function requestPermissionsDirect(): Promise<{
         foregroundLocation: permission.state === 'granted',
         backgroundLocation: true,
         batteryOptimization: true,
+        notifications: true,
         needsBackgroundPrompt: false,
       };
     } catch {
@@ -27,6 +29,7 @@ export async function requestPermissionsDirect(): Promise<{
         foregroundLocation: false,
         backgroundLocation: false,
         batteryOptimization: false,
+        notifications: false,
         needsBackgroundPrompt: false,
       };
     }
@@ -36,11 +39,31 @@ export async function requestPermissionsDirect(): Promise<{
     foregroundLocation: false,
     backgroundLocation: false,
     batteryOptimization: false,
+    notifications: false,
     needsBackgroundPrompt: false,
   };
 
   try {
-    // Step 1: Request foreground location permission using Capacitor Geolocation
+    // Step 1: Request NOTIFICATION permission FIRST (Android 13+)
+    // This is required to show the foreground service notification
+    console.log('[Permissions] Requesting notification permission...');
+    try {
+      const { requestNotificationPermission } = await import('./permissions');
+      const notifResult = await requestNotificationPermission();
+      console.log('[Permissions] Notification permission result:', notifResult);
+
+      if (notifResult.status === 'granted' || notifResult.status === 'already_granted' || notifResult.notNeeded) {
+        results.notifications = true;
+        console.log('[Permissions] Notification permission granted');
+      }
+    } catch (notifError) {
+      console.warn('[Permissions] Notification permission request failed:', notifError);
+    }
+
+    // Wait a moment before requesting location
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Step 2: Request foreground location permission using Capacitor Geolocation
     // This shows the native Android permission dialog directly
     console.log('[Permissions] Requesting foreground location via Capacitor Geolocation...');
     const locationPermission = await Geolocation.requestPermissions();
@@ -49,7 +72,7 @@ export async function requestPermissionsDirect(): Promise<{
       results.foregroundLocation = true;
       console.log('[Permissions] Foreground location granted');
 
-      // Step 2: Check if we have background location (Android 10+)
+      // Step 3: Check if we have background location (Android 10+)
       // Wait a moment for foreground permission to register
       await new Promise(resolve => setTimeout(resolve, 300));
 
@@ -92,7 +115,7 @@ export async function requestPermissionsDirect(): Promise<{
         console.warn('[Permissions] Error checking location level:', levelError);
       }
 
-      // Step 3: Request battery optimization (opens settings, non-blocking)
+      // Step 4: Request battery optimization (opens settings, non-blocking)
       await new Promise(resolve => setTimeout(resolve, 500));
 
       try {

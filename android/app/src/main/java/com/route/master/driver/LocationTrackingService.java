@@ -7,8 +7,10 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.graphics.Color;
 import android.location.Location;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -33,14 +35,17 @@ import java.util.Map;
 
 public class LocationTrackingService extends Service {
     private static final String TAG = "LocationTrackingService";
-    private static final String CHANNEL_ID = "location_tracking_channel";
+    private static final String CHANNEL_ID = "trip_tracking_channel";
     private static final int NOTIFICATION_ID = 1001;
     private static final long UPDATE_INTERVAL_MS = 2000; // 2 seconds
+    private static final long NOTIFICATION_REPIN_INTERVAL_MS = 30000; // 30 seconds - re-pin notification to prevent
+                                                                      // dismissal
 
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
     private DatabaseReference databaseRef;
     private PowerManager.WakeLock wakeLock;
+    private NotificationManager notificationManager;
 
     // Route/Driver info
     private String driverId = "";
@@ -49,14 +54,35 @@ public class LocationTrackingService extends Service {
     private String routeId = "";
     private String routeName = "";
     private String routeState = "";
+    private String currentStopName = "";
 
     private boolean isServiceRunning = false;
     private Notification notification;
+    private Handler notificationHandler;
+
+    // Runnable to periodically re-pin the foreground notification
+    // This ensures the notification stays visible even if user tries to swipe it
+    // away
+    private final Runnable notificationRepinRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (isServiceRunning) {
+                repinForegroundNotification();
+                // Schedule next re-pin
+                if (notificationHandler != null) {
+                    notificationHandler.postDelayed(this, NOTIFICATION_REPIN_INTERVAL_MS);
+                }
+            }
+        }
+    };
 
     @Override
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "onCreate called");
+
+        // Get notification manager
+        notificationManager = getSystemService(NotificationManager.class);
 
         // Create notification channel FIRST
         createNotificationChannel();
@@ -112,6 +138,38 @@ public class LocationTrackingService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "onStartCommand called, isServiceRunning=" + isServiceRunning);
 
+        // Extract route/driver info from intent FIRST (needed for notification)
+        if (intent != null) {
+            driverId = intent.getStringExtra("driverId");
+            driverName = intent.getStringExtra("driverName");
+            busNumber = intent.getStringExtra("busNumber");
+            routeId = intent.getStringExtra("routeId");
+            routeName = intent.getStringExtra("routeName");
+            routeState = intent.getStringExtra("routeState");
+            currentStopName = intent.getStringExtra("currentStopName");
+
+            if (driverId == null)
+                driverId = "";
+            if (driverName == null)
+                driverName = "";
+            if (busNumber == null)
+                busNumber = "unknown";
+            if (routeId == null)
+                routeId = "";
+            if (routeName == null)
+                routeName = "";
+            if (routeState == null)
+                routeState = "";
+            if (currentStopName == null)
+                currentStopName = "";
+
+            Log.d(TAG,
+                    "Service config - busNumber: " + busNumber + ", routeId: " + routeId + ", driverId: " + driverId);
+        }
+
+        // Recreate notification with updated info
+        notification = createNotification();
+
         // CRITICAL: Start foreground IMMEDIATELY - before anything else!
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -126,36 +184,16 @@ public class LocationTrackingService extends Service {
             return START_NOT_STICKY;
         }
 
-        // Extract route/driver info from intent
-        if (intent != null) {
-            driverId = intent.getStringExtra("driverId");
-            driverName = intent.getStringExtra("driverName");
-            busNumber = intent.getStringExtra("busNumber");
-            routeId = intent.getStringExtra("routeId");
-            routeName = intent.getStringExtra("routeName");
-            routeState = intent.getStringExtra("routeState");
-
-            if (driverId == null)
-                driverId = "";
-            if (driverName == null)
-                driverName = "";
-            if (busNumber == null)
-                busNumber = "unknown";
-            if (routeId == null)
-                routeId = "";
-            if (routeName == null)
-                routeName = "";
-            if (routeState == null)
-                routeState = "";
-
-            Log.d(TAG,
-                    "Service config - busNumber: " + busNumber + ", routeId: " + routeId + ", driverId: " + driverId);
-        }
-
         // Start location updates if not already running
         if (!isServiceRunning) {
             startLocationUpdates();
             isServiceRunning = true;
+
+            // Start the notification re-pinning handler to keep notification sticky
+            notificationHandler = new Handler(Looper.getMainLooper());
+            notificationHandler.postDelayed(notificationRepinRunnable, NOTIFICATION_REPIN_INTERVAL_MS);
+            Log.d(TAG, "Notification re-pin handler started - notification will be re-pinned every " +
+                    (NOTIFICATION_REPIN_INTERVAL_MS / 1000) + " seconds");
         }
 
         return START_STICKY;
@@ -163,19 +201,31 @@ public class LocationTrackingService extends Service {
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // CRITICAL: Delete old channel first to reset cached settings
+            // Android caches channel settings, so we need to delete and recreate
+            if (notificationManager != null) {
+                notificationManager.deleteNotificationChannel(CHANNEL_ID);
+                Log.d(TAG, "Deleted old notification channel to reset settings");
+            }
+
+            // Use IMPORTANCE_HIGH for foreground service to ensure it's truly sticky
+            // IMPORTANCE_LOW and DEFAULT can be dismissed on some OEM ROMs
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
-                    "GPS Location Tracking",
-                    NotificationManager.IMPORTANCE_LOW);
-            channel.setDescription("Continuous GPS location tracking for bus route");
-            channel.setShowBadge(false);
-            channel.setSound(null, null);
+                    "Trip Tracking - Active",
+                    NotificationManager.IMPORTANCE_HIGH); // HIGH = always visible, non-dismissible
+            channel.setDescription("Required for GPS tracking during trips - cannot be dismissed while active");
+            channel.setShowBadge(true);
+            channel.setSound(null, null); // Silent but always visible
             channel.enableVibration(false);
+            channel.enableLights(true);
+            channel.setLightColor(Color.parseColor("#10B981")); // Green color
+            channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+            channel.setBypassDnd(true); // Bypass Do Not Disturb
 
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
-                Log.d(TAG, "Notification channel created");
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(channel);
+                Log.d(TAG, "Notification channel created with IMPORTANCE_HIGH for sticky behavior");
             }
         }
     }
@@ -190,16 +240,105 @@ public class LocationTrackingService extends Service {
                 notificationIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Route Master - GPS Active")
-                .setContentText("Tracking your location continuously")
+        // Build title and content like Swiggy/Zomato
+        String title = "🚌 Trip Ongoing";
+        String content;
+
+        if (!routeName.isEmpty()) {
+            if (!currentStopName.isEmpty()) {
+                content = "Bus " + busNumber + " • Heading to: " + currentStopName;
+            } else {
+                content = "Bus " + busNumber + " • " + routeName;
+            }
+        } else if (!busNumber.isEmpty() && !busNumber.equals("unknown")) {
+            content = "Bus " + busNumber + " • GPS tracking active";
+        } else {
+            content = "GPS tracking active • Students can see your location";
+        }
+
+        // Add subtext for more info
+        String subText = "Tap to open app";
+
+        Notification notif = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle(title)
+                .setContentText(content)
+                .setSubText(subText)
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .setContentIntent(pendingIntent)
-                .setOngoing(true)
-                .setSilent(true)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOngoing(true) // Cannot be swiped away - CRITICAL for sticky notification
+                .setSilent(true) // No sound but always visible
+                .setPriority(NotificationCompat.PRIORITY_HIGH) // HIGH priority = cannot be dismissed
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // Show on lock screen
+                .setColorized(true)
+                .setColor(Color.parseColor("#10B981")) // Green color like Swiggy
+                .setShowWhen(true) // Show timestamp
+                .setUsesChronometer(true) // Show running time like "12:34"
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE) // Show immediately
+                .setAutoCancel(false) // Prevent auto-cancel
                 .build();
+
+        // Add ALL flags to make notification truly non-dismissible (like
+        // Swiggy/Zomato/Hotspot)
+        notif.flags |= Notification.FLAG_NO_CLEAR; // Cannot be cleared by user or "Clear All"
+        notif.flags |= Notification.FLAG_ONGOING_EVENT; // Ongoing event, cannot be dismissed
+        notif.flags |= Notification.FLAG_FOREGROUND_SERVICE; // Foreground service notification
+        notif.flags &= ~Notification.FLAG_AUTO_CANCEL; // Ensure auto-cancel is disabled
+
+        return notif;
+    }
+
+    /**
+     * Update the notification with current stop info
+     * Called when driver marks a stop as reached
+     * 
+     * CRITICAL: Use startForeground instead of notify to keep notification truly
+     * sticky
+     * Using notificationManager.notify() allows dismissal on some OEM ROMs
+     */
+    public void updateNotification(String currentStop, String routeState) {
+        this.currentStopName = currentStop != null ? currentStop : "";
+        this.routeState = routeState != null ? routeState : "";
+
+        // Recreate and update notification
+        notification = createNotification();
+
+        // CRITICAL: Use startForeground to re-pin the notification
+        // This prevents users from swiping it away on OEM ROMs like Samsung, Xiaomi,
+        // etc.
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
+            }
+            Log.d(TAG, "Notification re-pinned via startForeground - currentStop: " + currentStop);
+        } catch (Exception e) {
+            // Fallback to notify if startForeground fails (shouldn't happen)
+            if (notificationManager != null) {
+                notificationManager.notify(NOTIFICATION_ID, notification);
+            }
+            Log.e(TAG, "startForeground failed, used notify fallback: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Re-pin the foreground notification to prevent dismissal
+     * Call this periodically or when the notification might have been swiped
+     */
+    private void repinForegroundNotification() {
+        if (isServiceRunning && notification != null) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+                } else {
+                    startForeground(NOTIFICATION_ID, notification);
+                }
+                Log.d(TAG, "Foreground notification re-pinned");
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to re-pin notification: " + e.getMessage());
+            }
+        }
     }
 
     private void startLocationUpdates() {
@@ -278,6 +417,13 @@ public class LocationTrackingService extends Service {
     public void onDestroy() {
         Log.d(TAG, "onDestroy called");
         isServiceRunning = false;
+
+        // Stop notification re-pin handler
+        if (notificationHandler != null) {
+            notificationHandler.removeCallbacks(notificationRepinRunnable);
+            notificationHandler = null;
+            Log.d(TAG, "Notification re-pin handler stopped");
+        }
 
         // Stop location updates
         if (fusedLocationClient != null && locationCallback != null) {

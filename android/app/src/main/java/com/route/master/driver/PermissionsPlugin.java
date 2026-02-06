@@ -27,6 +27,7 @@ public class PermissionsPlugin extends Plugin {
 
     private PluginCall pendingCall;
     private int currentPermissionStep = 0;
+    private boolean isStandaloneRequest = false; // Track standalone vs sequential requests
 
     @PluginMethod
     public void requestAllPermissions(PluginCall call) {
@@ -38,6 +39,7 @@ public class PermissionsPlugin extends Plugin {
 
         pendingCall = call;
         currentPermissionStep = 0;
+        isStandaloneRequest = false; // This is a sequential request
 
         Log.d(TAG, "Starting permission request flow...");
         requestNextPermission();
@@ -240,11 +242,20 @@ public class PermissionsPlugin extends Plugin {
 
             case NOTIFICATION_REQUEST_CODE:
                 Log.d(TAG, "Notification " + (granted ? "granted" : "denied"));
+                // If this was a standalone request, resolve immediately
+                if (isStandaloneRequest && pendingCall != null) {
+                    JSObject result = new JSObject();
+                    result.put("status", granted ? "granted" : "denied");
+                    pendingCall.resolve(result);
+                    pendingCall = null;
+                    isStandaloneRequest = false;
+                    return;
+                }
                 currentPermissionStep = 3;
                 break;
         }
 
-        // Continue with next permission after a brief delay
+        // Continue with next permission after a brief delay (only for sequential flow)
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             requestNextPermission();
         }, 500);
@@ -380,5 +391,44 @@ public class PermissionsPlugin extends Plugin {
 
         Log.d(TAG, "Location permission level: " + level);
         call.resolve(result);
+    }
+
+    /**
+     * Request notification permission (Android 13+)
+     * Required to show foreground service notification
+     */
+    @PluginMethod
+    public void requestNotificationPermission(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("Activity not available");
+            return;
+        }
+
+        // Check if already granted or not needed
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            // Android 12 and below don't need this permission
+            JSObject result = new JSObject();
+            result.put("status", "granted");
+            result.put("notNeeded", true);
+            call.resolve(result);
+            return;
+        }
+
+        if (hasNotificationPermission()) {
+            JSObject result = new JSObject();
+            result.put("status", "already_granted");
+            call.resolve(result);
+            return;
+        }
+
+        // Request notification permission on Android 13+
+        pendingCall = call;
+        isStandaloneRequest = true; // Mark as standalone request
+        Log.d(TAG, "Requesting notification permission (standalone)");
+        ActivityCompat.requestPermissions(
+                activity,
+                new String[] { Manifest.permission.POST_NOTIFICATIONS },
+                NOTIFICATION_REQUEST_CODE);
     }
 }

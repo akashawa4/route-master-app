@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react';
 import { LoginPage } from './LoginPage';
 import { MainRoutePage } from './MainRoutePage';
 import { DriverInfo } from '@/types/driver';
-import { 
-  authenticateDriver, 
-  signOutDriver, 
-  saveDriverSession, 
-  clearDriverSession, 
-  getSavedDriverSession 
+import {
+  authenticateDriver,
+  signOutDriver,
+  saveDriverSession,
+  clearDriverSession,
+  getSavedDriverSession
 } from '@/services/authService';
 
 const Index = () => {
@@ -23,11 +23,11 @@ const Index = () => {
     try {
       // Authenticate and fetch driver data from Firestore
       const result = await authenticateDriver(driverId, password);
-      
+
       if (result) {
         setDriver(result);
         saveDriverSession(result); // Save to localStorage for persistence
-        
+
         // Request permissions after login (non-blocking, native dialogs)
         // Like delivery apps - ask but don't block if denied
         if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform()) {
@@ -68,6 +68,19 @@ const Index = () => {
     const savedDriver = getSavedDriverSession();
     if (savedDriver) {
       setDriver(savedDriver);
+
+      // Also request permissions when restoring session (not just on fresh login)
+      if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform()) {
+        setTimeout(async () => {
+          try {
+            const { requestPermissionsDirect } = await import('@/utils/requestPermissionsDirect');
+            console.log('[Index] Requesting permissions after session restore...');
+            await requestPermissionsDirect();
+          } catch (permError) {
+            console.log('Permission request after session restore skipped:', permError);
+          }
+        }, 1500); // Delay so app fully loads first
+      }
     }
     setIsRestoring(false);
   }, []);

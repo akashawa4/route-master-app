@@ -69,6 +69,10 @@ export class PermissionsWeb extends WebPlugin implements PermissionsPlugin {
     console.warn('[PermissionsWeb] requestBackgroundLocationOnly is not available on web');
     return { status: 'granted' };
   }
+
+  async requestNotificationPermission(): Promise<{ status: string; notNeeded?: boolean }> {
+    // Not applicable on web - always consider granted
+    console.warn('[PermissionsWeb] requestNotificationPermission is not available on web');
+    return { status: 'granted', notNeeded: true };
+  }
 }
-
-
