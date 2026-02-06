@@ -3,6 +3,7 @@ import { RouteHeader } from '@/components/RouteHeader';
 import { StopsList } from '@/components/StopsList';
 import { RouteActionButton } from '@/components/RouteActionButton';
 import { InlineMessage } from '@/components/InlineMessage';
+import { BackgroundLocationPrompt } from '@/components/BackgroundLocationPrompt';
 import { DriverInfo, Stop, RouteState } from '@/types/driver';
 import { LogOut, MapPin, Wifi, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
   const [routeState, setRouteState] = useState<RouteState>('not_started');
   const [message, setMessage] = useState<{ type: 'error' | 'warning' | 'info' | 'success'; text: string } | null>(null);
   const [activeTripId, setActiveTripId] = useState<string | null>(null);
+  const [showBackgroundLocationPrompt, setShowBackgroundLocationPrompt] = useState(false);
 
   // Location tracking hook - automatically starts when route is in progress
   const { currentLocation, isTracking, error: locationError } = useLocationTracking({
@@ -139,8 +141,15 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
   const handleStartRoute = async () => {
     if (routeState === "in_progress") return;
 
+    // Request permissions and check if background location prompt is needed
     const { requestPermissionsDirect } = await import('@/utils/requestPermissionsDirect');
-    await requestPermissionsDirect();
+    const permResult = await requestPermissionsDirect();
+
+    // Show popup if user only granted "while using" permission
+    if (permResult.needsBackgroundPrompt) {
+      setShowBackgroundLocationPrompt(true);
+      // Continue with route start anyway - just show the prompt
+    }
 
     const nextStops = stops.map((stop, index) =>
       index === 0 ? { ...stop, status: 'current' as const } : { ...stop, status: 'pending' as const },
@@ -183,6 +192,18 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
       .catch(console.error);
 
     setTimeout(() => setMessage(null), 3000);
+  };
+
+  const handleBackgroundPromptDismiss = () => {
+    setShowBackgroundLocationPrompt(false);
+  };
+
+  const handleBackgroundPermissionGranted = () => {
+    setShowBackgroundLocationPrompt(false);
+    toast.success('Background location enabled!', {
+      description: 'GPS tracking will now work when the app is minimized.',
+      duration: 4000,
+    });
   };
 
   const handleMarkReached = () => {
@@ -255,98 +276,109 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
   };
 
   return (
-    <div className="min-h-screen-safe bg-background flex flex-col">
-      {/* Header - Sticky */}
-      <RouteHeader
-        driverName={driver.name}
-        busNumber={driver.route.busNumber}
-        routeName={driver.route.name}
-      />
+    <>
+      {/* Background Location Permission Prompt Modal */}
+      {showBackgroundLocationPrompt && (
+        <BackgroundLocationPrompt
+          onDismiss={handleBackgroundPromptDismiss}
+          onPermissionGranted={handleBackgroundPermissionGranted}
+        />
+      )}
 
-      {/* Main Scrollable Content */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide">
-        <div className="container py-2.5 sm:py-3 space-y-2.5 sm:space-y-3 pb-24 sm:pb-28">
-          {/* Message Area */}
-          {message && (
-            <div className={message.type === 'success'
-              ? 'bg-green-50 dark:bg-green-950 border-2 border-green-200 dark:border-green-800 rounded-lg p-2.5 sm:p-3'
-              : 'rounded-lg p-2.5 sm:p-3'
-            }>
-              <InlineMessage type={message.type} message={message.text} />
-            </div>
-          )}
+      <div className="min-h-screen-safe bg-background flex flex-col">
+        {/* Header - Sticky */}
+        <RouteHeader
+          driverName={driver.name}
+          busNumber={driver.route.busNumber}
+          routeName={driver.route.name}
+        />
 
-          {/* Location Tracking Status - Compact */}
-          {routeState === 'in_progress' && (
-            <div className="gps-card">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <MapPin className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
-                  <span className="font-medium text-sm truncate">GPS Tracking</span>
-                </div>
-                <span className={`px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 flex items-center gap-1 ${isTracking
+        {/* Main Scrollable Content */}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide">
+          <div className="container py-2.5 sm:py-3 space-y-2.5 sm:space-y-3 pb-24 sm:pb-28">
+            {/* Message Area */}
+            {message && (
+              <div className={message.type === 'success'
+                ? 'bg-green-50 dark:bg-green-950 border-2 border-green-200 dark:border-green-800 rounded-lg p-2.5 sm:p-3'
+                : 'rounded-lg p-2.5 sm:p-3'
+              }>
+                <InlineMessage type={message.type} message={message.text} />
+              </div>
+            )}
+
+            {/* Location Tracking Status - Compact */}
+            {routeState === 'in_progress' && (
+              <div className="gps-card">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <MapPin className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+                    <span className="font-medium text-sm truncate">GPS Tracking</span>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 flex items-center gap-1 ${isTracking
                     ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
                     : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-                  }`}>
-                  {isTracking ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-                  {isTracking ? 'Active' : 'Connecting'}
-                </span>
-              </div>
+                    }`}>
+                    {isTracking ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+                    {isTracking ? 'Active' : 'Connecting'}
+                  </span>
+                </div>
 
-              {currentLocation && (
-                <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground pt-1">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase tracking-wide opacity-70">Lat</span>
-                    <span className="font-mono text-foreground">{currentLocation.latitude.toFixed(5)}</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-[10px] uppercase tracking-wide opacity-70">Lng</span>
-                    <span className="font-mono text-foreground">{currentLocation.longitude.toFixed(5)}</span>
-                  </div>
-                  {currentLocation.accuracy && (
+                {currentLocation && (
+                  <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground pt-1">
                     <div className="flex flex-col">
-                      <span className="text-[10px] uppercase tracking-wide opacity-70">Accuracy</span>
-                      <span className="text-foreground">±{Math.round(currentLocation.accuracy)}m</span>
+                      <span className="text-[10px] uppercase tracking-wide opacity-70">Lat</span>
+                      <span className="font-mono text-foreground">{currentLocation.latitude.toFixed(5)}</span>
                     </div>
-                  )}
-                </div>
-              )}
+                    <div className="flex flex-col">
+                      <span className="text-[10px] uppercase tracking-wide opacity-70">Lng</span>
+                      <span className="font-mono text-foreground">{currentLocation.longitude.toFixed(5)}</span>
+                    </div>
+                    {currentLocation.accuracy && (
+                      <div className="flex flex-col">
+                        <span className="text-[10px] uppercase tracking-wide opacity-70">Accuracy</span>
+                        <span className="text-foreground">±{Math.round(currentLocation.accuracy)}m</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-              {locationError && (
-                <div className="pt-1">
-                  <InlineMessage type="error" message={`GPS: ${locationError}`} />
-                </div>
-              )}
+                {locationError && (
+                  <div className="pt-1">
+                    <InlineMessage type="error" message={`GPS: ${locationError}`} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Stops List */}
+            <StopsList stops={stops} />
+
+            {/* Logout Button */}
+            <div className="pt-1">
+              <Button
+                variant="outline"
+                onClick={onLogout}
+                className="w-full gap-2 text-sm h-11 active:scale-[0.98] transition-transform"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out
+              </Button>
             </div>
-          )}
-
-          {/* Stops List */}
-          <StopsList stops={stops} />
-
-          {/* Logout Button */}
-          <div className="pt-1">
-            <Button
-              variant="outline"
-              onClick={onLogout}
-              className="w-full gap-2 text-sm h-11 active:scale-[0.98] transition-transform"
-            >
-              <LogOut className="w-4 h-4" />
-              Sign Out
-            </Button>
           </div>
-        </div>
-      </main>
+        </main>
 
-      {/* Action Button - Fixed at bottom */}
-      <div className="fixed-bottom-bar">
-        <RouteActionButton
-          routeState={routeState}
-          currentStopName={currentStop?.name}
-          isLastStop={isLastStop}
-          onStartRoute={handleStartRoute}
-          onMarkReached={handleMarkReached}
-        />
+        {/* Action Button - Fixed at bottom */}
+        <div className="fixed-bottom-bar">
+          <RouteActionButton
+            routeState={routeState}
+            currentStopName={currentStop?.name}
+            isLastStop={isLastStop}
+            onStartRoute={handleStartRoute}
+            onMarkReached={handleMarkReached}
+          />
+        </div>
       </div>
-    </div>
+    </>
   );
 }
+

@@ -8,9 +8,18 @@ export interface PermissionStatus {
   notifications?: string;
 }
 
+export interface LocationPermissionLevel {
+  level: 'denied' | 'while_using' | 'always';
+  hasForeground: boolean;
+  hasBackground: boolean;
+}
+
 export interface PermissionsPlugin {
   requestAllPermissions(): Promise<PermissionStatus>;
   checkPermissions(): Promise<PermissionStatus>;
+  openAppLocationSettings(): Promise<void>;
+  getLocationPermissionLevel(): Promise<LocationPermissionLevel>;
+  requestBackgroundLocationOnly(): Promise<{ status: string }>;
 }
 
 let Permissions: PermissionsPlugin;
@@ -34,6 +43,17 @@ try {
       backgroundLocation: 'denied',
       batteryOptimization: 'denied',
       notifications: 'denied',
+    }),
+    openAppLocationSettings: async () => {
+      console.warn('[Permissions] openAppLocationSettings not available on web');
+    },
+    getLocationPermissionLevel: async () => ({
+      level: 'always' as const,
+      hasForeground: true,
+      hasBackground: true,
+    }),
+    requestBackgroundLocationOnly: async () => ({
+      status: 'granted',
     }),
   } as PermissionsPlugin;
 }
@@ -159,3 +179,76 @@ export async function hasAllRequiredPermissions(): Promise<boolean> {
     status.batteryOptimization === 'granted'
   );
 }
+
+/**
+ * Open app's location permission settings
+ * Redirects user to app info -> Permissions -> Location
+ * where they can select "Allow all the time"
+ */
+export async function openAppLocationSettings(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) {
+    console.warn('[Permissions] openAppLocationSettings not available on web');
+    return;
+  }
+
+  try {
+    await Permissions.openAppLocationSettings();
+    console.log('[Permissions] Opened app location settings');
+  } catch (error) {
+    console.error('[Permissions] Error opening app settings:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get detailed location permission level
+ * Returns 'always', 'while_using', or 'denied'
+ */
+export async function getLocationPermissionLevel(): Promise<LocationPermissionLevel> {
+  if (!Capacitor.isNativePlatform()) {
+    // On web, assume always allowed if geolocation is granted
+    try {
+      const permission = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+      return {
+        level: permission.state === 'granted' ? 'always' : 'denied',
+        hasForeground: permission.state === 'granted',
+        hasBackground: true,
+      };
+    } catch {
+      return {
+        level: 'denied',
+        hasForeground: false,
+        hasBackground: false,
+      };
+    }
+  }
+
+  try {
+    return await Permissions.getLocationPermissionLevel();
+  } catch (error) {
+    console.error('[Permissions] Error getting location level:', error);
+    return {
+      level: 'denied',
+      hasForeground: false,
+      hasBackground: false,
+    };
+  }
+}
+
+/**
+ * Request only background location permission
+ * Shows native Android dialog for "Allow all the time" option
+ */
+export async function requestBackgroundLocationOnly(): Promise<{ status: string }> {
+  if (!Capacitor.isNativePlatform()) {
+    return { status: 'granted' };
+  }
+
+  try {
+    return await Permissions.requestBackgroundLocationOnly();
+  } catch (error) {
+    console.error('[Permissions] Error requesting background location:', error);
+    return { status: 'error' };
+  }
+}
+

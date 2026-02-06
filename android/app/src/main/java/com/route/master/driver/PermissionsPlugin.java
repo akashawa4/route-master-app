@@ -260,4 +260,125 @@ public class PermissionsPlugin extends Plugin {
             requestNextPermission();
         }
     }
+
+    /**
+     * Open the app's location permission settings page directly
+     * This allows users to select "Allow all the time" option
+     * Similar to how professional apps like Uber, Swiggy redirect users
+     */
+    @PluginMethod
+    public void openAppLocationSettings(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("Activity not available");
+            return;
+        }
+
+        try {
+            // On Android 11+ (API 30+), we can open location permissions directly
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    // Try to open location permission settings directly
+                    Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                    Uri uri = Uri.fromParts("package", getContext().getPackageName(), null);
+                    intent.setData(uri);
+                    // Add extra to try to scroll to permissions section
+                    intent.putExtra(":android:show_fragment",
+                            "com.android.settings.applications.appinfo.AppPermissionPreference");
+                    activity.startActivity(intent);
+                    Log.d(TAG, "Opened app settings (Android 11+)");
+                    call.resolve();
+                    return;
+                } catch (Exception e) {
+                    Log.d(TAG, "Failed to open with fragment, trying standard method");
+                }
+            }
+
+            // Fallback: Open standard app details settings
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            Uri uri = Uri.fromParts("package", getContext().getPackageName(), null);
+            intent.setData(uri);
+            activity.startActivity(intent);
+            Log.d(TAG, "Opened app settings (standard method)");
+            call.resolve();
+        } catch (Exception e) {
+            Log.e(TAG, "Error opening app settings: " + e.getMessage());
+            call.reject("Could not open app settings: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Request only background location permission
+     * Shows the native Android dialog for background location (Android 10+)
+     * This is called after user already has foreground location permission
+     */
+    @PluginMethod
+    public void requestBackgroundLocationOnly(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("Activity not available");
+            return;
+        }
+
+        // Check if we already have background permission
+        if (hasBackgroundLocationPermission()) {
+            JSObject result = new JSObject();
+            result.put("status", "already_granted");
+            call.resolve(result);
+            return;
+        }
+
+        // Check if we have foreground permission first
+        if (!hasForegroundLocationPermission()) {
+            call.reject("Foreground location permission required first");
+            return;
+        }
+
+        // On Android 10+, request background location
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            pendingCall = call;
+            Log.d(TAG, "Requesting background location permission directly");
+            ActivityCompat.requestPermissions(
+                    activity,
+                    new String[] { Manifest.permission.ACCESS_BACKGROUND_LOCATION },
+                    BACKGROUND_LOCATION_REQUEST_CODE);
+        } else {
+            // On older Android, foreground permission is enough
+            JSObject result = new JSObject();
+            result.put("status", "granted");
+            call.resolve(result);
+        }
+    }
+
+    /**
+     * Check if background location is granted (separate method for precise
+     * checking)
+     * Returns "granted" only if ACCESS_BACKGROUND_LOCATION is granted
+     * Returns "foreground_only" if only foreground location is granted
+     * Returns "denied" if no location permission
+     */
+    @PluginMethod
+    public void getLocationPermissionLevel(PluginCall call) {
+        JSObject result = new JSObject();
+
+        boolean hasForeground = hasForegroundLocationPermission();
+        boolean hasBackground = hasBackgroundLocationPermission();
+
+        String level;
+        if (!hasForeground) {
+            level = "denied";
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            level = hasBackground ? "always" : "while_using";
+        } else {
+            // Below Android 10, foreground permission is effectively "always"
+            level = "always";
+        }
+
+        result.put("level", level);
+        result.put("hasForeground", hasForeground);
+        result.put("hasBackground", hasBackground);
+
+        Log.d(TAG, "Location permission level: " + level);
+        call.resolve(result);
+    }
 }
