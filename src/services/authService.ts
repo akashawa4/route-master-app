@@ -1,9 +1,9 @@
-import { 
-  signInWithEmailAndPassword, 
+import {
+  signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signOut, 
+  signOut,
   onAuthStateChanged,
-  User 
+  User
 } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
@@ -25,7 +25,7 @@ const COLLECTIONS = {
  * @param password - The password field value from Firestore
  */
 export const authenticateDriver = async (
-  driverId: string, 
+  driverId: string,
   password: string
 ): Promise<DriverInfo | null> => {
   try {
@@ -44,7 +44,7 @@ export const authenticateDriver = async (
     // Get the first matching document
     const driverDoc = querySnapshot.docs[0];
     const driverData = driverDoc.data();
-    
+
     // Step 2: Verify password matches the one stored in Firestore (set by admin)
     if (driverData.password !== password) {
       return null;
@@ -80,33 +80,58 @@ export const authenticateDriver = async (
     }
 
     // Step 5: Fetch route data
-    // Based on your structure: Driver -> Bus (via assignedBusId) -> Route (via assignedRouteId)
+    // Supports two data models:
+    // 1. Driver -> Bus (via driver.assignedBusId)
+    // 2. Bus -> Driver (via bus.assignedDriverId) - reverse lookup
     let routeId: string | null = null;
     let busNumber: string | null = null;
     let busData: any = null;
-    
-    // Get route from assigned bus (driver has assignedBusId)
+
+    // Method 1: Check if driver has a bus assigned directly
     if (driverData.assignedBusId) {
       try {
         const busDocRef = doc(firestore, COLLECTIONS.BUSES, driverData.assignedBusId);
         const busDoc = await getDoc(busDocRef);
-        
+
         if (busDoc.exists()) {
           busData = busDoc.data();
-          // Bus has assignedRouteId field
           routeId = busData.assignedRouteId;
-          // Bus has busNumber field
           busNumber = busData.busNumber;
         }
       } catch (busError) {
-        console.error('Error fetching bus data:', busError);
-        throw new Error("Failed to fetch bus information. Please contact admin.");
+        console.error('Error fetching bus by assignedBusId:', busError);
       }
     }
 
-    // Fallback: Try direct routeId from driver (if exists)
+    // Method 2: Reverse lookup - find bus where assignedDriverId matches this driver's document ID
+    if (!busData) {
+      try {
+        const driverDocId = driverDoc.id; // The Firestore document ID of the driver
+        const busesQuery = query(
+          collection(firestore, COLLECTIONS.BUSES),
+          where("assignedDriverId", "==", driverDocId)
+        );
+        const busQuerySnapshot = await getDocs(busesQuery);
+
+        if (!busQuerySnapshot.empty) {
+          const busDoc = busQuerySnapshot.docs[0];
+          busData = busDoc.data();
+          routeId = busData.assignedRouteId;
+          busNumber = busData.busNumber;
+          console.log('Found bus via reverse lookup (assignedDriverId):', busNumber);
+        }
+      } catch (busError) {
+        console.error('Error fetching bus by assignedDriverId:', busError);
+      }
+    }
+
+    // If still no bus found, throw error
+    if (!busData) {
+      throw new Error("No bus assigned to this driver. Please contact admin to assign a bus.");
+    }
+
     if (!routeId) {
-      routeId = driverData.routeId || driverData.assignedRouteId || null;
+      throw new Error("Bus has no route assigned. Please contact admin.");
     }
 
     if (!routeId) {
@@ -231,30 +256,55 @@ export const restoreDriverSession = async (user: User): Promise<DriverInfo | nul
     const driverData = driverDoc.data();
 
     // Fetch route data (same logic as authenticateDriver)
+    // Supports both: driver.assignedBusId OR bus.assignedDriverId (reverse lookup)
     let routeId: string | null = null;
     let busNumber: string | null = null;
+    let busData: any = null;
 
+    // Method 1: Check if driver has a bus assigned directly
     if (driverData.assignedBusId) {
       try {
         const busDocRef = doc(firestore, COLLECTIONS.BUSES, driverData.assignedBusId);
         const busDoc = await getDoc(busDocRef);
 
         if (busDoc.exists()) {
-          const busData = busDoc.data();
+          busData = busDoc.data();
           routeId = busData.assignedRouteId;
           busNumber = busData.busNumber;
         }
       } catch (busError) {
-        console.error("Error fetching bus data:", busError);
+        console.error("Error fetching bus by assignedBusId:", busError);
       }
     }
 
-    if (!routeId) {
-      routeId = driverData.routeId || driverData.assignedRouteId || null;
+    // Method 2: Reverse lookup - find bus where assignedDriverId matches this driver's document ID
+    if (!busData) {
+      try {
+        const driverDocId = driverDoc.id;
+        const busesQuery = query(
+          collection(firestore, COLLECTIONS.BUSES),
+          where("assignedDriverId", "==", driverDocId)
+        );
+        const busQuerySnapshot = await getDocs(busesQuery);
+
+        if (!busQuerySnapshot.empty) {
+          const busDoc = busQuerySnapshot.docs[0];
+          busData = busDoc.data();
+          routeId = busData.assignedRouteId;
+          busNumber = busData.busNumber;
+        }
+      } catch (busError) {
+        console.error("Error fetching bus by assignedDriverId:", busError);
+      }
+    }
+
+    if (!busData) {
+      console.warn("Driver has no bus assigned:", driverId);
+      return null;
     }
 
     if (!routeId) {
-      console.warn("Driver has no associated route:", driverId);
+      console.warn("Bus has no route assigned for driver:", driverId);
       return null;
     }
 

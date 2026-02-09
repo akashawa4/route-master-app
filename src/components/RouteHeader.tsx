@@ -1,19 +1,34 @@
-import { Bus, Route } from 'lucide-react';
+import { Bus, Route, LogOut } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface RouteHeaderProps {
   driverName: string;
   busNumber: string;
   routeName: string;
+  onLogout?: () => void;
 }
 
-export function RouteHeader({ driverName, busNumber, routeName }: RouteHeaderProps) {
+export function RouteHeader({ driverName, busNumber, routeName, onLogout }: RouteHeaderProps) {
   return (
     <header className="bg-card border-b border-border sticky top-0 z-10 shadow-sm safe-area-inset-top">
       <div className="container py-2.5 sm:py-3">
-        {/* Driver Welcome */}
-        <h1 className="text-base sm:text-lg font-bold text-foreground mb-2 truncate">
-          Welcome, {driverName}
-        </h1>
+        {/* Top Row - Driver Name and Sign Out */}
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h1 className="text-base sm:text-lg font-bold text-foreground truncate">
+            Welcome, {driverName}
+          </h1>
+          {onLogout && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onLogout}
+              className="flex-shrink-0 h-8 px-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="ml-1.5 text-xs hidden sm:inline">Sign Out</span>
+            </Button>
+          )}
+        </div>
 
         {/* Info Chips - Responsive */}
         <div className="flex flex-wrap gap-1.5 sm:gap-2">

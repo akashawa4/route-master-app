@@ -5,8 +5,8 @@ import { RouteActionButton } from '@/components/RouteActionButton';
 import { InlineMessage } from '@/components/InlineMessage';
 import { BackgroundLocationPrompt } from '@/components/BackgroundLocationPrompt';
 import { DriverInfo, Stop, RouteState } from '@/types/driver';
-import { LogOut, MapPin, Wifi, WifiOff } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { MapPin, Wifi, WifiOff } from 'lucide-react';
+
 import { useLocationTracking } from '@/hooks/useLocationTracking';
 import { toast } from 'sonner';
 import {
@@ -19,7 +19,7 @@ import { finishTrip, getActiveTrip, markStopReached, startTrip, updateTripRouteS
 
 interface MainRoutePageProps {
   driver: DriverInfo;
-  onLogout: () => void;
+  onLogout?: () => void;
 }
 
 export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
@@ -164,12 +164,21 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
     setRouteState('in_progress');
     setMessage({ type: 'info', text: 'Route started. GPS tracking active.' });
 
+    console.log('📍 Writing bus location meta for:', busNumber);
     writeBusLocationMeta(busNumber, routeId, routeName, driver.name, 'in_progress').catch(console.error);
+
+    console.log('📊 Updating route state for bus:', busNumber);
     updateRouteState(driver.id, busNumber, 'in_progress').catch(console.error);
+
+    console.log('🚏 Saving stops progress for bus:', busNumber, 'with', nextStops.length, 'stops');
     saveStopsProgressToFirebase(
       busNumber,
       nextStops.map((s) => ({ id: s.id, name: s.name, order: s.order, status: s.status })),
-    ).catch(console.error);
+    )
+      .then(() => console.log('✅ Stops saved successfully'))
+      .catch((err) => {
+        console.error('❌ Failed to save stops:', err);
+      });
 
     startTrip({
       busNumber: driver.route.busNumber,
@@ -293,6 +302,7 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
           driverName={driver.name}
           busNumber={driver.route.busNumber}
           routeName={driver.route.name}
+          onLogout={onLogout}
         />
 
         {/* Main Scrollable Content */}
@@ -355,17 +365,19 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
             {/* Stops List */}
             <StopsList stops={stops} />
 
-            {/* Logout Button */}
-            <div className="pt-1">
-              <Button
-                variant="outline"
-                onClick={onLogout}
-                className="w-full gap-2 text-sm h-11 active:scale-[0.98] transition-transform"
-              >
-                <LogOut className="w-4 h-4" />
-                Sign Out
-              </Button>
-            </div>
+            {/* Footer */}
+            <footer className="pt-6 pb-2 text-center border-t border-border/50">
+              <p className="text-xs text-muted-foreground">
+                Designed & Developed by{' '}
+                <span className="font-semibold text-foreground">Akash.Solution</span>
+              </p>
+              <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                (Akash Vijay Awachar)
+              </p>
+              <p className="text-[10px] text-muted-foreground/60 mt-1">
+                © 2026 All Rights Reserved
+              </p>
+            </footer>
           </div>
         </main>
 

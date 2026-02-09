@@ -1,11 +1,11 @@
-import { 
-  collection, 
-  doc, 
-  getDoc, 
-  getDocs, 
-  query, 
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
   where,
-  orderBy 
+  orderBy
 } from "firebase/firestore";
 import { firestore } from "@/lib/firebase";
 import { DriverInfo, Stop, RouteInfo } from "@/types/driver";
@@ -41,29 +41,48 @@ export const getDriverById = async (driverId: string): Promise<DriverInfo | null
     // Get the first matching document
     const driverDoc = querySnapshot.docs[0];
     const driverData = driverDoc.data();
-    
-    // Get route from assigned bus (driver -> bus -> route)
+
+    // Get route from assigned bus
+    // Supports both: driver.assignedBusId OR bus.assignedDriverId (reverse lookup)
     let routeId: string | null = null;
     let busNumber: string | null = null;
-    
+    let busData: any = null;
+
+    // Method 1: Check if driver has a bus assigned directly
     if (driverData.assignedBusId) {
       try {
         const busDocRef = doc(firestore, COLLECTIONS.BUSES, driverData.assignedBusId);
         const busDoc = await getDoc(busDocRef);
-        
+
         if (busDoc.exists()) {
-          const busData = busDoc.data();
+          busData = busDoc.data();
           routeId = busData.assignedRouteId;
           busNumber = busData.busNumber;
         }
       } catch (busError) {
-        console.error('Error fetching bus data:', busError);
+        console.error('Error fetching bus by assignedBusId:', busError);
       }
     }
 
-    // Fallback: Check for direct routeId
-    if (!routeId) {
-      routeId = driverData.routeId || driverData.assignedRouteId || null;
+    // Method 2: Reverse lookup - find bus where assignedDriverId matches this driver's document ID
+    if (!busData) {
+      try {
+        const driverDocId = driverDoc.id;
+        const busesQuery = query(
+          collection(firestore, COLLECTIONS.BUSES),
+          where("assignedDriverId", "==", driverDocId)
+        );
+        const busQuerySnapshot = await getDocs(busesQuery);
+
+        if (!busQuerySnapshot.empty) {
+          const busDoc = busQuerySnapshot.docs[0];
+          busData = busDoc.data();
+          routeId = busData.assignedRouteId;
+          busNumber = busData.busNumber;
+        }
+      } catch (busError) {
+        console.error('Error fetching bus by assignedDriverId:', busError);
+      }
     }
 
     if (!routeId) {
@@ -93,7 +112,7 @@ export const getDriverById = async (driverId: string): Promise<DriverInfo | null
  * This function is kept for backward compatibility but should use Firebase Auth
  */
 export const authenticateDriver = async (
-  driverId: string, 
+  driverId: string,
   password: string
 ): Promise<DriverInfo | null> => {
   try {
@@ -191,7 +210,7 @@ export const getStopsByIds = async (stopIds: string[]): Promise<Stop[]> => {
     }
 
     // Fetch stops in parallel
-    const stopPromises = stopIds.map(async (stopId) => {
+    const stopPromises = stopIds.map(async (stopId): Promise<Stop | null> => {
       const stopDocRef = doc(firestore, COLLECTIONS.STOPS, stopId);
       const stopDoc = await getDoc(stopDocRef);
 
@@ -206,7 +225,7 @@ export const getStopsByIds = async (stopIds: string[]): Promise<Stop[]> => {
         name: stopData.name || "",
         status: 'pending' as const,
         order: stopData.order || 0
-      };
+      } as Stop;
     });
 
     const stops = await Promise.all(stopPromises);
@@ -259,7 +278,7 @@ export const getBusByNumber = async (busNumber: string): Promise<any | null> => 
     );
 
     const querySnapshot = await getDocs(busesQuery);
-    
+
     if (querySnapshot.empty) {
       return null;
     }

@@ -29,6 +29,7 @@ import com.google.android.gms.location.Priority;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.firestore.FirebaseFirestore;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -44,6 +45,7 @@ public class LocationTrackingService extends Service {
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
     private DatabaseReference databaseRef;
+    private FirebaseFirestore firestore;
     private PowerManager.WakeLock wakeLock;
     private NotificationManager notificationManager;
 
@@ -105,6 +107,10 @@ public class LocationTrackingService extends Service {
                     .getInstance("https://college-bus-tracking-903e7-default-rtdb.firebaseio.com");
             databaseRef = database.getReference();
             Log.d(TAG, "Firebase database reference obtained");
+
+            // Initialize Firestore for liveBuses collection
+            firestore = FirebaseFirestore.getInstance();
+            Log.d(TAG, "Firestore instance obtained");
         } catch (Exception e) {
             Log.e(TAG, "Firebase initialization error: " + e.getMessage(), e);
         }
@@ -395,18 +401,57 @@ public class LocationTrackingService extends Service {
                 locationData.put("heading", location.getBearing());
             }
 
+            // 1. Write to RTDB (for real-time location on map)
             String path = "buses/" + busNumber + "/location";
-            Log.d(TAG, "Sending location to Firebase path: " + path);
+            Log.d(TAG, "Sending location to Firebase RTDB path: " + path);
 
             databaseRef.child("buses").child(busNumber).child("location")
                     .setValue(locationData)
                     .addOnSuccessListener(aVoid -> {
-                        Log.d(TAG, "Location sent to Firebase successfully: " +
+                        Log.d(TAG, "Location sent to RTDB successfully: " +
                                 location.getLatitude() + ", " + location.getLongitude());
                     })
                     .addOnFailureListener(e -> {
-                        Log.e(TAG, "Failed to send location to Firebase: " + e.getMessage(), e);
+                        Log.e(TAG, "Failed to send location to RTDB: " + e.getMessage(), e);
                     });
+
+            // 2. Write to Firestore liveBuses collection (for notifications)
+            if (firestore != null && routeId != null && !routeId.isEmpty()) {
+                // liveBuses document structure expected by student app
+                Map<String, Object> liveBusData = new HashMap<>();
+                liveBusData.put("busNumber", busNumber);
+                liveBusData.put("routeId", routeId);
+                liveBusData.put("routeName", routeName);
+                liveBusData.put("driverId", driverId);
+                liveBusData.put("driverName", driverName);
+                liveBusData.put("latitude", location.getLatitude());
+                liveBusData.put("longitude", location.getLongitude());
+                liveBusData.put("routeState", routeState);
+                liveBusData.put("timestamp", System.currentTimeMillis());
+                liveBusData.put("accuracy", location.getAccuracy());
+
+                if (location.hasSpeed()) {
+                    liveBusData.put("speed", location.getSpeed());
+                }
+                if (location.hasBearing()) {
+                    liveBusData.put("heading", location.getBearing());
+                }
+
+                // Use routeId as document ID (consistent with student app queries)
+                String firestoreDocId = routeId + "_" + busNumber;
+
+                firestore.collection("liveBuses")
+                        .document(firestoreDocId)
+                        .set(liveBusData)
+                        .addOnSuccessListener(aVoid -> {
+                            Log.d(TAG, "Live bus data sent to Firestore successfully: " + firestoreDocId);
+                        })
+                        .addOnFailureListener(e -> {
+                            Log.e(TAG, "Failed to send live bus data to Firestore: " + e.getMessage(), e);
+                        });
+            } else {
+                Log.w(TAG, "Firestore not initialized or routeId missing, skipping liveBuses update");
+            }
 
         } catch (Exception e) {
             Log.e(TAG, "Error sending location to Firebase: " + e.getMessage(), e);
@@ -429,6 +474,20 @@ public class LocationTrackingService extends Service {
         if (fusedLocationClient != null && locationCallback != null) {
             fusedLocationClient.removeLocationUpdates(locationCallback);
             Log.d(TAG, "Location updates stopped");
+        }
+
+        // Clean up Firestore liveBuses document
+        if (firestore != null && routeId != null && !routeId.isEmpty() && busNumber != null) {
+            String firestoreDocId = routeId + "_" + busNumber;
+            firestore.collection("liveBuses")
+                    .document(firestoreDocId)
+                    .delete()
+                    .addOnSuccessListener(aVoid -> {
+                        Log.d(TAG, "Live bus document deleted from Firestore: " + firestoreDocId);
+                    })
+                    .addOnFailureListener(e -> {
+                        Log.e(TAG, "Failed to delete live bus document: " + e.getMessage(), e);
+                    });
         }
 
         // Release wake lock

@@ -47,6 +47,7 @@ dependencies {
     // Firebase for native RTDB access (sending GPS from background service)
     implementation platform('com.google.firebase:firebase-bom:34.8.0')
     implementation 'com.google.firebase:firebase-database'
+    implementation 'com.google.firebase:firebase-firestore' // For liveBuses collection (student notifications)
     implementation 'com.google.firebase:firebase-analytics'
 }
 

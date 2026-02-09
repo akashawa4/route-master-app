@@ -58,11 +58,10 @@ const Index = () => {
     } catch (error) {
       console.error('Error signing out:', error);
     }
-    clearDriverSession(); // Clear from localStorage
+    clearDriverSession();
     setDriver(null);
     setLoginError(undefined);
   };
-
   // Restore session from localStorage on page load
   useEffect(() => {
     const savedDriver = getSavedDriverSession();
