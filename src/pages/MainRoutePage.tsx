@@ -164,12 +164,21 @@ export function MainRoutePage({ driver, onLogout }: MainRoutePageProps) {
     setRouteState('in_progress');
     setMessage({ type: 'info', text: 'Route started. GPS tracking active.' });
 
-    console.log('📍 Writing bus location meta for:', busNumber);
-    writeBusLocationMeta(busNumber, routeId, routeName, driver.name, 'in_progress').catch(console.error);
+    // 1) Write location meta FIRST and wait - Cloud Function reads routeId from here when routeState triggers
+    try {
+      await writeBusLocationMeta(busNumber, routeId, routeName, driver.name, 'in_progress');
+    } catch (e) {
+      console.error('Failed to write bus location meta:', e);
+    }
 
-    console.log('📊 Updating route state for bus:', busNumber);
-    updateRouteState(driver.id, busNumber, 'in_progress').catch(console.error);
+    // 2) Then write routeState - this triggers notifyStudentsRouteStarted; routeId must already exist
+    try {
+      await updateRouteState(driver.id, busNumber, 'in_progress');
+    } catch (e) {
+      console.error('Failed to update route state:', e);
+    }
 
+    // 3) Stops progress (can be parallel)
     console.log('🚏 Saving stops progress for bus:', busNumber, 'with', nextStops.length, 'stops');
     saveStopsProgressToFirebase(
       busNumber,
