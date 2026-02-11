@@ -44,9 +44,31 @@ const Index = () => {
       } else {
         setLoginError('Invalid Driver ID or Password. Please try again.');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
-      setLoginError('Failed to connect to server. Please try again.');
+
+      // Check if it's a network/connectivity error
+      const errorMessage = error?.message || '';
+      const errorCode = error?.code || '';
+
+      const isNetworkError =
+        errorCode === 'unavailable' ||
+        errorCode === 'network-request-failed' ||
+        errorMessage.includes('network') ||
+        errorMessage.includes('Failed to fetch') ||
+        errorMessage.includes('ERR_INTERNET_DISCONNECTED') ||
+        errorMessage.includes('ERR_NAME_NOT_RESOLVED') ||
+        errorMessage.includes('timeout');
+
+      if (isNetworkError) {
+        setLoginError('Failed to connect to server. Please check your internet connection and try again.');
+      } else if (errorMessage) {
+        // Show the actual meaningful error from authService
+        // e.g., "No bus assigned to this driver", "Route not found", etc.
+        setLoginError(errorMessage);
+      } else {
+        setLoginError('Login failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }

@@ -401,6 +401,14 @@ public class LocationTrackingService extends Service {
                 locationData.put("heading", location.getBearing());
             }
 
+            // Add currentStop data if available (needed for student app notifications)
+            if (currentStopName != null && !currentStopName.isEmpty()) {
+                Map<String, Object> currentStopData = new HashMap<>();
+                currentStopData.put("name", currentStopName);
+                currentStopData.put("updatedAt", System.currentTimeMillis());
+                locationData.put("currentStop", currentStopData);
+            }
+
             // 1. Write to RTDB (for real-time location on map)
             String path = "buses/" + busNumber + "/location";
             Log.d(TAG, "Sending location to Firebase RTDB path: " + path);

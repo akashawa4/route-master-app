@@ -29,6 +29,7 @@ export const authenticateDriver = async (
   password: string
 ): Promise<DriverInfo | null> => {
   try {
+    console.log('[AUTH] Step 1: Querying Firestore for driverId:', driverId);
     // Step 1: Query driver by driverId field (not document ID)
     const driversQuery = query(
       collection(firestore, COLLECTIONS.DRIVERS),
@@ -37,7 +38,9 @@ export const authenticateDriver = async (
 
     const querySnapshot = await getDocs(driversQuery);
 
+    console.log('[AUTH] Firestore query completed. Found docs:', querySnapshot.size);
     if (querySnapshot.empty) {
+      console.log('[AUTH] No driver found with driverId:', driverId);
       return null;
     }
 
@@ -46,9 +49,12 @@ export const authenticateDriver = async (
     const driverData = driverDoc.data();
 
     // Step 2: Verify password matches the one stored in Firestore (set by admin)
+    console.log('[AUTH] Step 2: Verifying password...');
     if (driverData.password !== password) {
+      console.log('[AUTH] Password mismatch for driver:', driverId);
       return null;
     }
+    console.log('[AUTH] Password verified successfully');
 
     // Step 3: Get email from driver data or use driverId as email
     // Admin can set email field, otherwise we use driverId@driverapp.com
@@ -83,6 +89,7 @@ export const authenticateDriver = async (
     // Supports two data models:
     // 1. Driver -> Bus (via driver.assignedBusId)
     // 2. Bus -> Driver (via bus.assignedDriverId) - reverse lookup
+    console.log('[AUTH] Step 5: Looking up bus assignment...');
     let routeId: string | null = null;
     let busNumber: string | null = null;
     let busData: any = null;
@@ -127,8 +134,10 @@ export const authenticateDriver = async (
 
     // If still no bus found, throw error
     if (!busData) {
+      console.error('[AUTH] No bus found for driver:', driverId);
       throw new Error("No bus assigned to this driver. Please contact admin to assign a bus.");
     }
+    console.log('[AUTH] Bus found. busNumber:', busNumber, 'routeId:', routeId);
 
     if (!routeId) {
       throw new Error("Bus has no route assigned. Please contact admin.");
@@ -139,11 +148,13 @@ export const authenticateDriver = async (
     }
 
     // Fetch route with busNumber (if available)
+    console.log('[AUTH] Step 6: Fetching route data for routeId:', routeId);
     const route = await getRouteById(routeId, busNumber || undefined);
     if (!route) {
       throw new Error("Route not found. Please contact admin.");
     }
 
+    console.log('[AUTH] Login successful for driver:', driverId, 'Route:', route.name);
     return {
       id: driverData.driverId || driverDoc.id, // Use driverId field or document ID as fallback
       name: driverData.name || "",
